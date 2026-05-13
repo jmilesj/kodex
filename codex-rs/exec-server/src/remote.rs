@@ -143,7 +143,7 @@ pub async fn run_remote_executor(
     loop {
         let response = client.register_executor(&config.executor_id).await?;
         eprintln!(
-            "codex exec-server remote executor registered with executor_id {}",
+            "kodex exec-server remote executor registered with executor_id {}",
             response.executor_id
         );
 

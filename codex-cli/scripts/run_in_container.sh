@@ -26,7 +26,7 @@ fi
 WORK_DIR=$(realpath "$WORK_DIR")
 
 # Generate a unique container name based on the normalized work directory
-CONTAINER_NAME="codex_$(echo "$WORK_DIR" | sed 's/\//_/g' | sed 's/[^a-zA-Z0-9_-]//g')"
+CONTAINER_NAME="kodex_$(echo "$WORK_DIR" | sed 's/\//_/g' | sed 's/[^a-zA-Z0-9_-]//g')"
 
 # Define cleanup to remove the container on script exit, ensuring no leftover containers
 cleanup() {
@@ -62,7 +62,7 @@ docker run --name "$CONTAINER_NAME" -d \
   --cap-add=NET_ADMIN \
   --cap-add=NET_RAW \
   -v "$WORK_DIR:/app$WORK_DIR" \
-  codex \
+  kodex \
   sleep infinity
 
 # Write the allowed domains to a file in the container
@@ -92,4 +92,4 @@ quoted_args=""
 for arg in "$@"; do
   quoted_args+=" $(printf '%q' "$arg")"
 done
-docker exec -it "$CONTAINER_NAME" bash -c "cd \"/app$WORK_DIR\" && codex --sandbox workspace-write --ask-for-approval on-request ${quoted_args}"
+docker exec -it "$CONTAINER_NAME" bash -c "cd \"/app$WORK_DIR\" && kodex --sandbox workspace-write --ask-for-approval on-request ${quoted_args}"

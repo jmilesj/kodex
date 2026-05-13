@@ -1,3 +1,7 @@
+// The standalone updater is disabled in this fork. Keep the daemon update and
+// restart helper types available for compatibility with existing tests and code.
+#![allow(dead_code)]
+
 mod backend;
 mod client;
 mod managed_install;
@@ -197,7 +201,7 @@ fn ensure_supported_platform() -> Result<()> {
 #[cfg(not(unix))]
 fn ensure_supported_platform() -> Result<()> {
     Err(anyhow!(
-        "codex app-server daemon lifecycle is only supported on Unix platforms"
+        "kodex app-server daemon lifecycle is only supported on Unix platforms"
     ))
 }
 
@@ -283,7 +287,7 @@ impl Daemon {
             && self.running_backend(&settings).await?.is_none()
         {
             return Err(anyhow!(
-                "app server is running but is not managed by codex app-server daemon"
+                "app server is running but is not managed by kodex app-server daemon"
             ));
         }
 
@@ -335,7 +339,7 @@ impl Daemon {
             }
         } else if client::probe(&self.socket_path).await.is_ok() {
             return Err(anyhow!(
-                "app server is running but is not managed by codex app-server daemon"
+                "app server is running but is not managed by kodex app-server daemon"
             ));
         } else {
             RestartIfRunningOutcome::NotRunning
@@ -362,7 +366,7 @@ impl Daemon {
 
         if client::probe(&self.socket_path).await.is_ok() {
             return Err(anyhow!(
-                "app server is running but is not managed by codex app-server daemon"
+                "app server is running but is not managed by kodex app-server daemon"
             ));
         }
 
@@ -446,7 +450,7 @@ impl Daemon {
 
         if backend.is_none() && client::probe(&self.socket_path).await.is_ok() {
             return Err(anyhow!(
-                "app server is running but is not managed by codex app-server daemon"
+                "app server is running but is not managed by kodex app-server daemon"
             ));
         }
 
@@ -494,7 +498,7 @@ impl Daemon {
             && self.running_backend(&settings).await?.is_none()
         {
             return Err(anyhow!(
-                "app server is running but is not managed by codex app-server daemon"
+                "app server is running but is not managed by kodex app-server daemon"
             ));
         }
         settings.save(&self.settings_file).await?;
@@ -505,17 +509,11 @@ impl Daemon {
 
         let backend = backend::pid_backend(self.backend_paths(&settings));
         backend.start().await?;
-        let updater = backend::pid_update_loop_backend(self.backend_paths(&settings));
-        if updater.is_starting_or_running().await? {
-            updater.stop().await?;
-        }
-        updater.start().await?;
-
         let info = self.wait_until_ready().await?;
         Ok(BootstrapOutput {
             status: BootstrapStatus::Bootstrapped,
             backend: BackendKind::Pid,
-            auto_update_enabled: true,
+            auto_update_enabled: false,
             remote_control_enabled: settings.remote_control_enabled,
             managed_codex_path: self.managed_codex_bin.clone(),
             socket_path: self.socket_path.clone(),
@@ -558,8 +556,7 @@ impl Daemon {
     }
 
     async fn is_bootstrapped(&self, settings: &DaemonSettings) -> Result<bool> {
-        let updater = backend::pid_update_loop_backend(self.backend_paths(settings));
-        updater.is_starting_or_running().await
+        Ok(self.running_backend_instance(settings).await?.is_some())
     }
 
     fn ensure_managed_codex_bin(&self) -> Result<()> {
@@ -568,7 +565,7 @@ impl Daemon {
         }
 
         Err(anyhow!(
-            "managed standalone Codex install not found at {}; install Codex first",
+            "managed standalone Kodex install not found at {}; install Kodex first",
             self.managed_codex_bin.display()
         ))
     }
@@ -700,11 +697,10 @@ fn restart_decision(
 
 #[cfg(unix)]
 fn should_reexec_updater(
-    updater_refresh_mode: UpdaterRefreshMode,
-    outcome: RestartIfRunningOutcome,
+    _updater_refresh_mode: UpdaterRefreshMode,
+    _outcome: RestartIfRunningOutcome,
 ) -> bool {
-    updater_refresh_mode == UpdaterRefreshMode::ReexecIfManagedBinaryChanged
-        && outcome == RestartIfRunningOutcome::Restarted
+    false
 }
 
 #[cfg(unix)]
@@ -784,7 +780,7 @@ mod tests {
             .map(|outcome| {
                 should_reexec_updater(UpdaterRefreshMode::ReexecIfManagedBinaryChanged, outcome)
             }),
-            [false, false, false, false, true]
+            [false, false, false, false, false]
         );
     }
 
@@ -857,9 +853,9 @@ mod tests {
         let bootstrap_output = BootstrapOutput {
             status: BootstrapStatus::Bootstrapped,
             backend: BackendKind::Pid,
-            auto_update_enabled: true,
+            auto_update_enabled: false,
             remote_control_enabled: true,
-            managed_codex_path: "codex".into(),
+            managed_codex_path: "kodex".into(),
             socket_path: "codex.sock".into(),
             cli_version: "1.2.3".to_string(),
             app_server_version: "1.2.4".to_string(),

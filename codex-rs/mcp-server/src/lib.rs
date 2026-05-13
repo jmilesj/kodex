@@ -217,7 +217,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mcp_server_builds_otel_provider_with_logs_traces_and_metrics() -> anyhow::Result<()> {
+    async fn mcp_server_leaves_otel_provider_disabled() -> anyhow::Result<()> {
         let codex_home = TempDir::new()?;
         let mut config = ConfigBuilder::default()
             .codex_home(codex_home.path().to_path_buf())
@@ -239,16 +239,12 @@ mod tests {
             Some(OTEL_SERVICE_NAME),
             DEFAULT_ANALYTICS_ENABLED,
         )
-        .map_err(|err| anyhow::anyhow!(err.to_string()))?
-        .expect("otel provider");
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
-        assert!(provider.logger.is_some(), "expected log exporter");
         assert!(
-            provider.tracer_provider.is_some(),
-            "expected trace exporter"
+            provider.is_none(),
+            "OTEL provider should stay disabled even when exporters are configured"
         );
-        assert!(provider.metrics().is_some(), "expected metrics exporter");
-        provider.shutdown();
 
         Ok(())
     }

@@ -6,15 +6,15 @@ use codex_install_context::StandalonePlatform;
 /// Update action the CLI should perform after the TUI exits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateAction {
-    /// Update via `npm install -g @openai/codex@latest`.
+    /// Update via the disabled `kodex update` command.
     NpmGlobalLatest,
-    /// Update via `bun install -g @openai/codex@latest`.
+    /// Update via the disabled `kodex update` command.
     BunGlobalLatest,
-    /// Update via `brew upgrade codex`.
+    /// Update via the disabled `kodex update` command.
     BrewUpgrade,
-    /// Update via `curl -fsSL https://chatgpt.com/codex/install.sh | sh`.
+    /// Update via the disabled `kodex update` command.
     StandaloneUnix,
-    /// Update via `irm https://chatgpt.com/codex/install.ps1|iex`.
+    /// Update via the disabled `kodex update` command.
     StandaloneWindows,
 }
 
@@ -36,17 +36,11 @@ impl UpdateAction {
     /// Returns the list of command-line arguments for invoking the update.
     pub fn command_args(self) -> (&'static str, &'static [&'static str]) {
         match self {
-            UpdateAction::NpmGlobalLatest => ("npm", &["install", "-g", "@openai/codex"]),
-            UpdateAction::BunGlobalLatest => ("bun", &["install", "-g", "@openai/codex"]),
-            UpdateAction::BrewUpgrade => ("brew", &["upgrade", "--cask", "codex"]),
-            UpdateAction::StandaloneUnix => (
-                "sh",
-                &["-c", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"],
-            ),
-            UpdateAction::StandaloneWindows => (
-                "powershell",
-                &["-c", "irm https://chatgpt.com/codex/install.ps1|iex"],
-            ),
+            UpdateAction::NpmGlobalLatest
+            | UpdateAction::BunGlobalLatest
+            | UpdateAction::BrewUpgrade
+            | UpdateAction::StandaloneUnix
+            | UpdateAction::StandaloneWindows => ("kodex", &["update"]),
         }
     }
 
@@ -60,7 +54,8 @@ impl UpdateAction {
 
 #[cfg(not(debug_assertions))]
 pub fn get_update_action() -> Option<UpdateAction> {
-    UpdateAction::from_install_context(InstallContext::current())
+    let _ = InstallContext::current();
+    None
 }
 
 #[cfg(test)]
@@ -108,20 +103,14 @@ mod tests {
     }
 
     #[test]
-    fn standalone_update_commands_rerun_latest_installer() {
+    fn update_commands_delegate_to_disabled_update_subcommand() {
         assert_eq!(
             UpdateAction::StandaloneUnix.command_args(),
-            (
-                "sh",
-                &["-c", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"][..],
-            )
+            ("kodex", &["update"][..])
         );
         assert_eq!(
             UpdateAction::StandaloneWindows.command_args(),
-            (
-                "powershell",
-                &["-c", "irm https://chatgpt.com/codex/install.ps1|iex"][..],
-            )
+            ("kodex", &["update"][..])
         );
     }
 }

@@ -17,15 +17,12 @@ fn unchanged_updater_uses_version_based_restart() {
 }
 
 #[test]
-fn changed_updater_forces_refresh_even_when_version_may_match() {
+fn changed_updater_does_not_request_refresh_when_updates_are_disabled() {
     assert_eq!(
         update_modes_for_identities(
             &executable_identity_from_bytes(b"old"),
             &executable_identity_from_bytes(b"new"),
         ),
-        (
-            RestartMode::Always,
-            UpdaterRefreshMode::ReexecIfManagedBinaryChanged,
-        )
+        (RestartMode::IfVersionChanged, UpdaterRefreshMode::None)
     );
 }

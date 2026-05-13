@@ -157,7 +157,7 @@ model_provider = "localapi_ws"
 model_reasoning_effort = "medium"
 
 
-start codex with `codex --profile localapi_ws`
+start kodex with `kodex --profile localapi_ws`
 """)
     sys.stdout.flush()
 

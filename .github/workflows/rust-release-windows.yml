@@ -42,14 +42,14 @@ jobs:
           - runner: windows-x64
             target: x86_64-pc-windows-msvc
             bundle: primary
-            binaries: "codex codex-responses-api-proxy"
+            binaries: "kodex codex-responses-api-proxy"
             runs_on:
               group: codex-runners
               labels: codex-windows-x64
           - runner: windows-arm64
             target: aarch64-pc-windows-msvc
             bundle: primary
-            binaries: "codex codex-responses-api-proxy"
+            binaries: "kodex codex-responses-api-proxy"
             runs_on:
               group: codex-runners
               labels: codex-windows-arm64
@@ -149,7 +149,7 @@ jobs:
       run:
         working-directory: codex-rs
     env:
-      WINDOWS_BINARIES: "codex codex-responses-api-proxy codex-windows-sandbox-setup codex-command-runner codex-app-server"
+      WINDOWS_BINARIES: "kodex codex-responses-api-proxy codex-windows-sandbox-setup codex-command-runner codex-app-server"
 
     strategy:
       fail-fast: false
@@ -243,12 +243,12 @@ jobs:
 
           stage_dir="${RUNNER_TEMP}/openai-codex-cli-bin-${{ matrix.target }}"
           wheel_dir="${GITHUB_WORKSPACE}/python-runtime-dist/${{ matrix.target }}"
-          # Keep the helpers next to codex.exe in the runtime wheel so Windows
+          # Keep the helpers next to kodex.exe in the runtime wheel so Windows
           # sandbox/elevation lookup matches the standalone release zip.
           python "${GITHUB_WORKSPACE}/sdk/python/scripts/update_sdk_artifacts.py" \
             stage-runtime \
             "$stage_dir" \
-            "${GITHUB_WORKSPACE}/codex-rs/target/${{ matrix.target }}/release/codex.exe" \
+            "${GITHUB_WORKSPACE}/codex-rs/target/${{ matrix.target }}/release/kodex.exe" \
             --codex-version "${GITHUB_REF_NAME}" \
             --platform-tag "$platform_tag" \
             --resource-binary "${GITHUB_WORKSPACE}/codex-rs/target/${{ matrix.target }}/release/codex-command-runner.exe" \
@@ -276,9 +276,9 @@ jobs:
           # For compatibility with environments that lack the `zstd` tool we
           # additionally create a `.tar.gz` and `.zip` for every Windows binary.
           # The end result is:
-          #   codex-<target>.zst
-          #   codex-<target>.tar.gz
-          #   codex-<target>.zip
+          #   kodex-<target>.zst
+          #   kodex-<target>.tar.gz
+          #   kodex-<target>.zip
           for f in "$dest"/*; do
             base="$(basename "$f")"
             # Skip files that are already archives (shouldn't happen, but be
@@ -298,9 +298,9 @@ jobs:
             # Create zip archive for Windows binaries.
             # Must run from inside the dest dir so 7z won't embed the
             # directory path inside the zip.
-            if [[ "$base" == "codex-${{ matrix.target }}.exe" ]]; then
-              # Bundle the sandbox helper binaries into the main codex zip so
-              # WinGet installs include the required helpers next to codex.exe.
+            if [[ "$base" == "kodex-${{ matrix.target }}.exe" ]]; then
+              # Bundle the sandbox helper binaries into the main kodex zip so
+              # WinGet installs include the required helpers next to kodex.exe.
               # Fall back to the single-binary zip if the helpers are missing
               # to avoid breaking releases.
               bundle_dir="$(mktemp -d)"

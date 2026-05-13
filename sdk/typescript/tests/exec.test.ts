@@ -94,7 +94,7 @@ describe("CodexExec", () => {
     expect(resumeIndex).toBeLessThan(imageIndex);
   });
 
-  it("allows overriding the env passed to the Codex CLI", async () => {
+  it("allows overriding the env passed to the Kodex CLI", async () => {
     const { CodexExec } = await import("../src/exec");
     spawnMock.mockClear();
     const child = new FakeChildProcess();

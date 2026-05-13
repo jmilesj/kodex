@@ -1,3 +1,7 @@
+// Analytics export is disabled in this fork. Keep the event and reducer types
+// available for compile-time compatibility with the rest of the workspace.
+#![allow(dead_code)]
+
 mod accepted_lines;
 mod client;
 mod events;

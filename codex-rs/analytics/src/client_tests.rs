@@ -29,6 +29,8 @@ use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnStatus as AppServerTurnStatus;
 use codex_app_server_protocol::TurnSteerParams;
 use codex_app_server_protocol::TurnSteerResponse;
+use codex_login::AuthManager;
+use codex_login::CodexAuth;
 use codex_protocol::models::PermissionProfile as CorePermissionProfile;
 use codex_utils_absolute_path::test_support::PathBufExt;
 use codex_utils_absolute_path::test_support::test_path_buf;
@@ -84,6 +86,17 @@ fn client_with_receiver() -> (AnalyticsEventsClient, mpsc::Receiver<AnalyticsFac
         plugin_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
     };
     (AnalyticsEventsClient { queue: Some(queue) }, receiver)
+}
+
+#[tokio::test]
+async fn new_client_is_disabled_even_when_analytics_enabled() {
+    let client = AnalyticsEventsClient::new(
+        AuthManager::from_auth_for_testing(CodexAuth::from_api_key("test")),
+        "https://example.test".to_string(),
+        Some(true),
+    );
+
+    assert!(client.queue.is_none());
 }
 
 fn sample_turn_start_request() -> ClientRequest {
