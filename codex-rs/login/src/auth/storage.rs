@@ -85,6 +85,13 @@ pub(super) fn get_auth_file(codex_home: &Path) -> PathBuf {
     codex_home.join("auth.json")
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct LoadedPersistentAuth {
+    pub auth: AuthDotJson,
+    pub storage_home: PathBuf,
+    pub storage_mode: AuthCredentialsStoreMode,
+}
+
 pub(super) fn delete_file_if_exists(codex_home: &Path) -> std::io::Result<bool> {
     let auth_file = get_auth_file(codex_home);
     match std::fs::remove_file(&auth_file) {
@@ -354,6 +361,35 @@ fn create_auth_storage_with_keyring_store(
         AuthCredentialsStoreMode::Auto => Arc::new(AutoAuthStorage::new(codex_home, keyring_store)),
         AuthCredentialsStoreMode::Ephemeral => Arc::new(EphemeralAuthStorage::new(codex_home)),
     }
+}
+
+pub(super) fn load_persistent_auth(
+    codex_home: &Path,
+    project_auth_dirs: &[PathBuf],
+    auth_credentials_store_mode: AuthCredentialsStoreMode,
+) -> std::io::Result<Option<LoadedPersistentAuth>> {
+    for project_auth_dir in project_auth_dirs {
+        let storage = FileAuthStorage::new(project_auth_dir.clone());
+        if let Some(auth) = storage.load()? {
+            return Ok(Some(LoadedPersistentAuth {
+                auth,
+                storage_home: project_auth_dir.clone(),
+                storage_mode: AuthCredentialsStoreMode::File,
+            }));
+        }
+    }
+
+    let storage = create_auth_storage(codex_home.to_path_buf(), auth_credentials_store_mode);
+    let auth = match storage.load()? {
+        Some(auth) => auth,
+        None => return Ok(None),
+    };
+
+    Ok(Some(LoadedPersistentAuth {
+        auth,
+        storage_home: codex_home.to_path_buf(),
+        storage_mode: auth_credentials_store_mode,
+    }))
 }
 
 #[cfg(test)]

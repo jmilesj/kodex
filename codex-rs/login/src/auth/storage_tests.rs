@@ -257,6 +257,62 @@ fn jwt_with_payload(payload: serde_json::Value) -> String {
 }
 
 #[test]
+fn load_persistent_auth_prefers_first_project_auth_file() -> anyhow::Result<()> {
+    let codex_home = tempdir()?;
+    let root_project_auth_dir = tempdir()?;
+    let child_project_auth_dir = tempdir()?;
+    let global_auth = auth_with_prefix("global");
+    let root_auth = auth_with_prefix("root-project");
+    let child_auth = auth_with_prefix("child-project");
+    FileAuthStorage::new(codex_home.path().to_path_buf()).save(&global_auth)?;
+    FileAuthStorage::new(root_project_auth_dir.path().to_path_buf()).save(&root_auth)?;
+    FileAuthStorage::new(child_project_auth_dir.path().to_path_buf()).save(&child_auth)?;
+
+    let loaded = load_persistent_auth(
+        codex_home.path(),
+        &[
+            child_project_auth_dir.path().to_path_buf(),
+            root_project_auth_dir.path().to_path_buf(),
+        ],
+        AuthCredentialsStoreMode::File,
+    )?;
+
+    assert_eq!(
+        Some(LoadedPersistentAuth {
+            auth: child_auth,
+            storage_home: child_project_auth_dir.path().to_path_buf(),
+            storage_mode: AuthCredentialsStoreMode::File,
+        }),
+        loaded
+    );
+    Ok(())
+}
+
+#[test]
+fn load_persistent_auth_falls_back_to_global_when_project_auth_is_missing() -> anyhow::Result<()> {
+    let codex_home = tempdir()?;
+    let project_auth_dir = tempdir()?;
+    let global_auth = auth_with_prefix("global");
+    FileAuthStorage::new(codex_home.path().to_path_buf()).save(&global_auth)?;
+
+    let loaded = load_persistent_auth(
+        codex_home.path(),
+        &[project_auth_dir.path().to_path_buf()],
+        AuthCredentialsStoreMode::File,
+    )?;
+
+    assert_eq!(
+        Some(LoadedPersistentAuth {
+            auth: global_auth,
+            storage_home: codex_home.path().to_path_buf(),
+            storage_mode: AuthCredentialsStoreMode::File,
+        }),
+        loaded
+    );
+    Ok(())
+}
+
+#[test]
 fn keyring_auth_storage_load_returns_deserialized_auth() -> anyhow::Result<()> {
     let codex_home = tempdir()?;
     let mock_keyring = MockKeyringStore::default();

@@ -8,7 +8,7 @@ use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
 use crate::legacy_core::config::find_codex_home;
-use crate::legacy_core::config::load_config_as_toml_with_cli_and_load_options;
+use crate::legacy_core::config::load_config_as_toml_with_project_auth_dirs_and_load_options;
 use crate::legacy_core::config::resolve_oss_provider;
 use crate::legacy_core::format_exec_policy_error_with_source;
 use crate::legacy_core::windows_sandbox::WindowsSandboxLevelExt;
@@ -844,34 +844,37 @@ pub async fn run_main(
         config_cwd_for_app_server_target(cwd.as_deref(), &app_server_target, &environment_manager)?;
 
     #[allow(clippy::print_stderr)]
-    let config_toml = match load_config_as_toml_with_cli_and_load_options(
-        &codex_home,
-        config_cwd.as_ref(),
-        cli_kv_overrides.clone(),
-        codex_config::ConfigLoadOptions {
-            loader_overrides: loader_overrides.clone(),
-            strict_config,
-        },
-    )
-    .await
-    {
-        Ok(config_toml) => config_toml,
-        Err(err) => {
-            let config_error = err
-                .get_ref()
-                .and_then(|err| err.downcast_ref::<ConfigLoadError>())
-                .map(ConfigLoadError::config_error);
-            if let Some(config_error) = config_error {
-                eprintln!(
-                    "Error loading config.toml:\n{}",
-                    format_config_error_with_source(config_error)
-                );
-            } else {
-                eprintln!("Error loading config.toml: {err}");
+    let config_toml_with_auth_dirs =
+        match load_config_as_toml_with_project_auth_dirs_and_load_options(
+            &codex_home,
+            config_cwd.as_ref(),
+            cli_kv_overrides.clone(),
+            codex_config::ConfigLoadOptions {
+                loader_overrides: loader_overrides.clone(),
+                strict_config,
+            },
+        )
+        .await
+        {
+            Ok(config_toml) => config_toml,
+            Err(err) => {
+                let config_error = err
+                    .get_ref()
+                    .and_then(|err| err.downcast_ref::<ConfigLoadError>())
+                    .map(ConfigLoadError::config_error);
+                if let Some(config_error) = config_error {
+                    eprintln!(
+                        "Error loading config.toml:\n{}",
+                        format_config_error_with_source(config_error)
+                    );
+                } else {
+                    eprintln!("Error loading config.toml: {err}");
+                }
+                std::process::exit(1);
             }
-            std::process::exit(1);
-        }
-    };
+        };
+    let config_toml = config_toml_with_auth_dirs.config_toml;
+    let project_auth_dirs = config_toml_with_auth_dirs.project_auth_dirs;
 
     let chatgpt_base_url = config_toml
         .chatgpt_base_url
@@ -879,6 +882,7 @@ pub async fn run_main(
         .unwrap_or_else(|| "https://chatgpt.com/backend-api/".to_string());
     let cloud_requirements = cloud_requirements_loader_for_storage(
         codex_home.to_path_buf(),
+        project_auth_dirs,
         /*enable_codex_api_key_env*/ false,
         config_toml.cli_auth_credentials_store.unwrap_or_default(),
         chatgpt_base_url,
@@ -1054,6 +1058,7 @@ pub async fn run_main(
         #[allow(clippy::print_stderr)]
         if let Err(err) = enforce_login_restrictions(&AuthConfig {
             codex_home: config.codex_home.to_path_buf(),
+            project_auth_dirs: config.project_auth_dirs(),
             auth_credentials_store_mode: config.cli_auth_credentials_store_mode,
             forced_login_method: config.forced_login_method,
             forced_chatgpt_workspace_id: config.forced_chatgpt_workspace_id.clone(),
@@ -1306,6 +1311,7 @@ async fn run_ratatui_app(
         if show_login_screen && !remote_mode {
             cloud_requirements = cloud_requirements_loader_for_storage(
                 initial_config.codex_home.to_path_buf(),
+                initial_config.project_auth_dirs(),
                 /*enable_codex_api_key_env*/ false,
                 initial_config.cli_auth_credentials_store_mode,
                 initial_config.chatgpt_base_url.clone(),

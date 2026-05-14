@@ -273,6 +273,77 @@ async fn loads_api_key_from_auth_json() {
     assert!(auth.get_token_data().is_err());
 }
 
+#[tokio::test]
+#[serial(codex_auth_env)]
+async fn project_chatgpt_auth_refresh_persists_to_project_auth_json() {
+    let codex_home = tempdir().unwrap();
+    let project_auth_dir = tempdir().unwrap();
+    let _access_token_guard = remove_access_token_env_var();
+    write_auth_file(
+        AuthFileParams {
+            openai_api_key: None,
+            chatgpt_plan_type: Some("pro".to_string()),
+            chatgpt_account_id: Some("org_global".to_string()),
+        },
+        codex_home.path(),
+    )
+    .expect("failed to write global auth file");
+    write_auth_file(
+        AuthFileParams {
+            openai_api_key: None,
+            chatgpt_plan_type: Some("pro".to_string()),
+            chatgpt_account_id: Some("org_project".to_string()),
+        },
+        project_auth_dir.path(),
+    )
+    .expect("failed to write project auth file");
+
+    let auth = super::load_auth_with_project_auth_dirs(
+        codex_home.path(),
+        &[project_auth_dir.path().to_path_buf()],
+        /*enable_codex_api_key_env*/ false,
+        AuthCredentialsStoreMode::File,
+        /*chatgpt_base_url*/ None,
+    )
+    .await
+    .expect("load auth")
+    .expect("auth available");
+
+    let CodexAuth::Chatgpt(chatgpt_auth) = auth else {
+        panic!("project auth should load as ChatGPT auth");
+    };
+    super::persist_tokens(
+        chatgpt_auth.storage(),
+        /*id_token*/ None,
+        Some("project-new-access-token".to_string()),
+        Some("project-new-refresh-token".to_string()),
+    )
+    .expect("persist refreshed project tokens");
+
+    let project_auth = FileAuthStorage::new(project_auth_dir.path().to_path_buf())
+        .load()
+        .expect("read project auth")
+        .expect("project auth should exist");
+    let global_auth = FileAuthStorage::new(codex_home.path().to_path_buf())
+        .load()
+        .expect("read global auth")
+        .expect("global auth should exist");
+    assert_eq!(
+        project_auth
+            .tokens
+            .as_ref()
+            .map(|tokens| tokens.access_token.as_str()),
+        Some("project-new-access-token")
+    );
+    assert_eq!(
+        global_auth
+            .tokens
+            .as_ref()
+            .map(|tokens| tokens.access_token.as_str()),
+        Some("test-access-token")
+    );
+}
+
 #[test]
 fn logout_removes_auth_file() -> Result<(), std::io::Error> {
     let dir = tempdir()?;
@@ -658,6 +729,7 @@ async fn build_config(
 ) -> AuthConfig {
     AuthConfig {
         codex_home: codex_home.to_path_buf(),
+        project_auth_dirs: Vec::new(),
         auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         forced_login_method,
         forced_chatgpt_workspace_id,

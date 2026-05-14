@@ -63,7 +63,7 @@ use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
 use codex_core::config::find_codex_home;
-use codex_core::config::load_config_as_toml_with_cli_and_load_options;
+use codex_core::config::load_config_as_toml_with_project_auth_dirs_and_load_options;
 use codex_core::config::resolve_oss_provider;
 use codex_core::find_thread_meta_by_name_str;
 use codex_core::format_exec_policy_error_with_source;
@@ -326,34 +326,37 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         ..Default::default()
     };
 
-    let config_toml = match load_config_as_toml_with_cli_and_load_options(
-        &codex_home,
-        Some(&config_cwd),
-        cli_kv_overrides.clone(),
-        ConfigLoadOptions {
-            loader_overrides: loader_overrides.clone(),
-            strict_config,
-        },
-    )
-    .await
-    {
-        Ok(config_toml) => config_toml,
-        Err(err) => {
-            let config_error = err
-                .get_ref()
-                .and_then(|err| err.downcast_ref::<ConfigLoadError>())
-                .map(ConfigLoadError::config_error);
-            if let Some(config_error) = config_error {
-                eprintln!(
-                    "Error loading config.toml:\n{}",
-                    format_config_error_with_source(config_error)
-                );
-            } else {
-                eprintln!("Error loading config.toml: {err}");
+    let config_toml_with_auth_dirs =
+        match load_config_as_toml_with_project_auth_dirs_and_load_options(
+            &codex_home,
+            Some(&config_cwd),
+            cli_kv_overrides.clone(),
+            ConfigLoadOptions {
+                loader_overrides: loader_overrides.clone(),
+                strict_config,
+            },
+        )
+        .await
+        {
+            Ok(config_toml) => config_toml,
+            Err(err) => {
+                let config_error = err
+                    .get_ref()
+                    .and_then(|err| err.downcast_ref::<ConfigLoadError>())
+                    .map(ConfigLoadError::config_error);
+                if let Some(config_error) = config_error {
+                    eprintln!(
+                        "Error loading config.toml:\n{}",
+                        format_config_error_with_source(config_error)
+                    );
+                } else {
+                    eprintln!("Error loading config.toml: {err}");
+                }
+                std::process::exit(1);
             }
-            std::process::exit(1);
-        }
-    };
+        };
+    let config_toml = config_toml_with_auth_dirs.config_toml;
+    let project_auth_dirs = config_toml_with_auth_dirs.project_auth_dirs;
 
     let chatgpt_base_url = config_toml
         .chatgpt_base_url
@@ -362,6 +365,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     // TODO(gt): Make cloud requirements failures blocking once we can fail-closed.
     let cloud_requirements = cloud_requirements_loader_for_storage(
         codex_home.to_path_buf(),
+        project_auth_dirs,
         /*enable_codex_api_key_env*/ false,
         config_toml.cli_auth_credentials_store.unwrap_or_default(),
         chatgpt_base_url,
@@ -456,6 +460,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
 
     if let Err(err) = enforce_login_restrictions(&AuthConfig {
         codex_home: config.codex_home.to_path_buf(),
+        project_auth_dirs: config.project_auth_dirs(),
         auth_credentials_store_mode: config.cli_auth_credentials_store_mode,
         forced_login_method: config.forced_login_method,
         forced_chatgpt_workspace_id: config.forced_chatgpt_workspace_id.clone(),

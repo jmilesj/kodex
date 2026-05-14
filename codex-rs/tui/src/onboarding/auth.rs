@@ -1051,6 +1051,7 @@ mod tests {
             .build()
             .await
             .unwrap();
+        let project_auth_dirs = config.project_auth_dirs();
         let client = InProcessAppServerClient::start(InProcessClientStartArgs {
             arg0_paths: Arg0DispatchPaths::default(),
             config: Arc::new(config),
@@ -1059,6 +1060,7 @@ mod tests {
             strict_config: false,
             cloud_requirements: cloud_requirements_loader_for_storage(
                 codex_home_path.clone(),
+                project_auth_dirs,
                 /*enable_codex_api_key_env*/ false,
                 AuthCredentialsStoreMode::File,
                 "https://chatgpt.com/backend-api/".to_string(),

@@ -149,6 +149,56 @@ fn http_mcp(url: &str) -> McpServerConfig {
     }
 }
 
+#[tokio::test]
+async fn project_auth_dirs_include_project_codex_dirs_nearest_first() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let project_root = TempDir::new()?;
+    let child_dir = project_root.path().join("child");
+    std::fs::create_dir_all(project_root.path().join(".codex"))?;
+    std::fs::create_dir_all(child_dir.join(".codex"))?;
+    std::fs::write(project_root.path().join(".git"), "gitdir: nowhere")?;
+
+    let config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(child_dir.clone()))
+        .build()
+        .await?;
+
+    assert_eq!(
+        vec![child_dir.join(".codex"), project_root.path().join(".codex")],
+        config.project_auth_dirs()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn config_toml_load_returns_project_auth_dirs() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let project_root = TempDir::new()?;
+    let child_dir = project_root.path().join("child");
+    std::fs::create_dir_all(project_root.path().join(".codex"))?;
+    std::fs::create_dir_all(child_dir.join(".codex"))?;
+    std::fs::write(project_root.path().join(".git"), "gitdir: nowhere")?;
+    let cwd = AbsolutePathBuf::from_absolute_path(child_dir.clone())?;
+
+    let loaded = load_config_as_toml_with_project_auth_dirs_and_load_options(
+        codex_home.path(),
+        Some(&cwd),
+        Vec::new(),
+        ConfigLoadOptions {
+            loader_overrides: LoaderOverrides::without_managed_config_for_tests(),
+            strict_config: false,
+        },
+    )
+    .await?;
+
+    assert_eq!(
+        vec![child_dir.join(".codex"), project_root.path().join(".codex")],
+        loaded.project_auth_dirs
+    );
+    Ok(())
+}
+
 async fn derive_legacy_sandbox_policy_for_test(
     cfg: &ConfigToml,
     sandbox_mode_override: Option<SandboxMode>,

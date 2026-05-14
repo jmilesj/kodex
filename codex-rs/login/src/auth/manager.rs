@@ -30,6 +30,8 @@ pub use crate::auth::storage::AgentIdentityAuthRecord;
 pub use crate::auth::storage::AuthDotJson;
 use crate::auth::storage::AuthStorageBackend;
 use crate::auth::storage::create_auth_storage;
+use crate::auth::storage::get_auth_file;
+use crate::auth::storage::load_persistent_auth;
 use crate::auth::util::try_parse_error_message;
 use crate::default_client::build_reqwest_client;
 use crate::default_client::create_client;
@@ -243,8 +245,26 @@ impl CodexAuth {
         auth_credentials_store_mode: AuthCredentialsStoreMode,
         chatgpt_base_url: Option<&str>,
     ) -> std::io::Result<Option<Self>> {
-        load_auth(
+        Self::from_auth_storage_with_project_auth_dirs(
             codex_home,
+            &[],
+            auth_credentials_store_mode,
+            chatgpt_base_url,
+        )
+        .await
+    }
+
+    /// Loads auth from project-local auth files before falling back to the
+    /// configured global auth store.
+    pub async fn from_auth_storage_with_project_auth_dirs(
+        codex_home: &Path,
+        project_auth_dirs: &[PathBuf],
+        auth_credentials_store_mode: AuthCredentialsStoreMode,
+        chatgpt_base_url: Option<&str>,
+    ) -> std::io::Result<Option<Self>> {
+        load_auth_with_project_auth_dirs(
+            codex_home,
+            project_auth_dirs,
             /*enable_codex_api_key_env*/ false,
             auth_credentials_store_mode,
             chatgpt_base_url,
@@ -608,6 +628,7 @@ pub fn load_auth_dot_json(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthConfig {
     pub codex_home: PathBuf,
+    pub project_auth_dirs: Vec<PathBuf>,
     pub auth_credentials_store_mode: AuthCredentialsStoreMode,
     pub forced_login_method: Option<ForcedLoginMethod>,
     pub forced_chatgpt_workspace_id: Option<String>,
@@ -615,8 +636,9 @@ pub struct AuthConfig {
 }
 
 pub async fn enforce_login_restrictions(config: &AuthConfig) -> std::io::Result<()> {
-    let Some(auth) = load_auth(
+    let Some(auth) = load_auth_with_project_auth_dirs(
         &config.codex_home,
+        &config.project_auth_dirs,
         /*enable_codex_api_key_env*/ true,
         config.auth_credentials_store_mode,
         config.chatgpt_base_url.as_deref(),
@@ -647,6 +669,7 @@ pub async fn enforce_login_restrictions(config: &AuthConfig) -> std::io::Result<
         if let Some(message) = method_violation {
             return logout_with_message(
                 &config.codex_home,
+                &config.project_auth_dirs,
                 message,
                 config.auth_credentials_store_mode,
             );
@@ -664,6 +687,7 @@ pub async fn enforce_login_restrictions(config: &AuthConfig) -> std::io::Result<
                     Err(err) => {
                         return logout_with_message(
                             &config.codex_home,
+                            &config.project_auth_dirs,
                             format!(
                                 "Failed to load ChatGPT credentials while enforcing workspace restrictions: {err}. Logging out."
                             ),
@@ -685,6 +709,7 @@ pub async fn enforce_login_restrictions(config: &AuthConfig) -> std::io::Result<
             };
             return logout_with_message(
                 &config.codex_home,
+                &config.project_auth_dirs,
                 message,
                 config.auth_credentials_store_mode,
             );
@@ -696,12 +721,14 @@ pub async fn enforce_login_restrictions(config: &AuthConfig) -> std::io::Result<
 
 fn logout_with_message(
     codex_home: &Path,
+    project_auth_dirs: &[PathBuf],
     message: String,
     auth_credentials_store_mode: AuthCredentialsStoreMode,
 ) -> std::io::Result<()> {
     // External auth tokens live in the ephemeral store, but persistent auth may still exist
     // from earlier logins. Clear both so a forced logout truly removes all active auth.
-    let removal_result = logout_all_stores(codex_home, auth_credentials_store_mode);
+    let removal_result =
+        logout_all_stores(codex_home, project_auth_dirs, auth_credentials_store_mode);
     let error_message = match removal_result {
         Ok(_) => message,
         Err(err) => format!("{message}. Failed to remove auth.json: {err}"),
@@ -711,18 +738,43 @@ fn logout_with_message(
 
 fn logout_all_stores(
     codex_home: &Path,
+    project_auth_dirs: &[PathBuf],
     auth_credentials_store_mode: AuthCredentialsStoreMode,
 ) -> std::io::Result<bool> {
     if auth_credentials_store_mode == AuthCredentialsStoreMode::Ephemeral {
         return logout(codex_home, AuthCredentialsStoreMode::Ephemeral);
     }
     let removed_ephemeral = logout(codex_home, AuthCredentialsStoreMode::Ephemeral)?;
-    let removed_managed = logout(codex_home, auth_credentials_store_mode)?;
+    let removed_managed = match project_auth_dirs
+        .iter()
+        .find(|project_auth_dir| get_auth_file(project_auth_dir).exists())
+    {
+        Some(project_auth_dir) => logout(project_auth_dir, AuthCredentialsStoreMode::File)?,
+        None => logout(codex_home, auth_credentials_store_mode)?,
+    };
     Ok(removed_ephemeral || removed_managed)
 }
 
+#[cfg(test)]
 async fn load_auth(
     codex_home: &Path,
+    enable_codex_api_key_env: bool,
+    auth_credentials_store_mode: AuthCredentialsStoreMode,
+    chatgpt_base_url: Option<&str>,
+) -> std::io::Result<Option<CodexAuth>> {
+    load_auth_with_project_auth_dirs(
+        codex_home,
+        &[],
+        enable_codex_api_key_env,
+        auth_credentials_store_mode,
+        chatgpt_base_url,
+    )
+    .await
+}
+
+async fn load_auth_with_project_auth_dirs(
+    codex_home: &Path,
+    project_auth_dirs: &[PathBuf],
     enable_codex_api_key_env: bool,
     auth_credentials_store_mode: AuthCredentialsStoreMode,
     chatgpt_base_url: Option<&str>,
@@ -760,17 +812,17 @@ async fn load_auth(
             .map(Some);
     }
 
-    // Fall back to the configured persistent store (file/keyring/auto) for managed auth.
-    let storage = create_auth_storage(codex_home.to_path_buf(), auth_credentials_store_mode);
-    let auth_dot_json = match storage.load()? {
-        Some(auth) => auth,
-        None => return Ok(None),
-    };
+    // Project-local auth files take precedence over the configured global persistent store.
+    let loaded_auth =
+        match load_persistent_auth(codex_home, project_auth_dirs, auth_credentials_store_mode)? {
+            Some(auth) => auth,
+            None => return Ok(None),
+        };
 
     let auth = CodexAuth::from_auth_dot_json(
-        codex_home,
-        auth_dot_json,
-        auth_credentials_store_mode,
+        &loaded_auth.storage_home,
+        loaded_auth.auth,
+        loaded_auth.storage_mode,
         chatgpt_base_url,
     )
     .await?;
@@ -1244,6 +1296,7 @@ impl UnauthorizedRecovery {
 /// different parts of the program seeing inconsistent auth data mid‑run.
 pub struct AuthManager {
     codex_home: PathBuf,
+    project_auth_dirs: Vec<PathBuf>,
     inner: RwLock<CachedAuth>,
     enable_codex_api_key_env: bool,
     auth_credentials_store_mode: AuthCredentialsStoreMode,
@@ -1266,6 +1319,11 @@ pub trait AuthManagerConfig {
     /// Returns the CLI auth credential storage mode for auth loading.
     fn cli_auth_credentials_store_mode(&self) -> AuthCredentialsStoreMode;
 
+    /// Returns project-local `.codex` directories to check for auth.json, highest precedence first.
+    fn project_auth_dirs(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
     /// Returns the workspace ID that ChatGPT auth should be restricted to, if any.
     fn forced_chatgpt_workspace_id(&self) -> Option<String>;
 
@@ -1277,6 +1335,7 @@ impl Debug for AuthManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AuthManager")
             .field("codex_home", &self.codex_home)
+            .field("project_auth_dirs", &self.project_auth_dirs)
             .field("inner", &self.inner)
             .field("enable_codex_api_key_env", &self.enable_codex_api_key_env)
             .field(
@@ -1304,8 +1363,26 @@ impl AuthManager {
         auth_credentials_store_mode: AuthCredentialsStoreMode,
         chatgpt_base_url: Option<String>,
     ) -> Self {
-        let managed_auth = load_auth(
+        Self::new_with_project_auth_dirs(
+            codex_home,
+            Vec::new(),
+            enable_codex_api_key_env,
+            auth_credentials_store_mode,
+            chatgpt_base_url,
+        )
+        .await
+    }
+
+    async fn new_with_project_auth_dirs(
+        codex_home: PathBuf,
+        project_auth_dirs: Vec<PathBuf>,
+        enable_codex_api_key_env: bool,
+        auth_credentials_store_mode: AuthCredentialsStoreMode,
+        chatgpt_base_url: Option<String>,
+    ) -> Self {
+        let managed_auth = load_auth_with_project_auth_dirs(
             &codex_home,
+            &project_auth_dirs,
             enable_codex_api_key_env,
             auth_credentials_store_mode,
             chatgpt_base_url.as_deref(),
@@ -1315,6 +1392,7 @@ impl AuthManager {
         .flatten();
         Self {
             codex_home,
+            project_auth_dirs,
             inner: RwLock::new(CachedAuth {
                 auth: managed_auth,
                 permanent_refresh_failure: None,
@@ -1337,6 +1415,7 @@ impl AuthManager {
 
         Arc::new(Self {
             codex_home: PathBuf::from("non-existent"),
+            project_auth_dirs: Vec::new(),
             inner: RwLock::new(cached),
             enable_codex_api_key_env: false,
             auth_credentials_store_mode: AuthCredentialsStoreMode::File,
@@ -1355,6 +1434,7 @@ impl AuthManager {
         };
         Arc::new(Self {
             codex_home,
+            project_auth_dirs: Vec::new(),
             inner: RwLock::new(cached),
             enable_codex_api_key_env: false,
             auth_credentials_store_mode: AuthCredentialsStoreMode::File,
@@ -1368,6 +1448,7 @@ impl AuthManager {
     pub fn external_bearer_only(config: ModelProviderAuthInfo) -> Arc<Self> {
         Arc::new(Self {
             codex_home: PathBuf::from("non-existent"),
+            project_auth_dirs: Vec::new(),
             inner: RwLock::new(CachedAuth {
                 auth: None,
                 permanent_refresh_failure: None,
@@ -1508,8 +1589,9 @@ impl AuthManager {
     }
 
     async fn load_auth_from_storage(&self) -> Option<CodexAuth> {
-        load_auth(
+        load_auth_with_project_auth_dirs(
             &self.codex_home,
+            &self.project_auth_dirs,
             self.enable_codex_api_key_env,
             self.auth_credentials_store_mode,
             self.chatgpt_base_url.as_deref(),
@@ -1600,13 +1682,16 @@ impl AuthManager {
         config: &impl AuthManagerConfig,
         enable_codex_api_key_env: bool,
     ) -> Arc<Self> {
-        let auth_manager = Self::shared(
-            config.codex_home(),
-            enable_codex_api_key_env,
-            config.cli_auth_credentials_store_mode(),
-            Some(config.chatgpt_base_url()),
-        )
-        .await;
+        let auth_manager = Arc::new(
+            Self::new_with_project_auth_dirs(
+                config.codex_home(),
+                config.project_auth_dirs(),
+                enable_codex_api_key_env,
+                config.cli_auth_credentials_store_mode(),
+                Some(config.chatgpt_base_url()),
+            )
+            .await,
+        );
         auth_manager.set_forced_chatgpt_workspace_id(config.forced_chatgpt_workspace_id());
         auth_manager
     }
@@ -1743,7 +1828,11 @@ impl AuthManager {
     /// reloads the in‑memory auth cache so callers immediately observe the
     /// unauthenticated state.
     pub async fn logout(&self) -> std::io::Result<bool> {
-        let removed = logout_all_stores(&self.codex_home, self.auth_credentials_store_mode)?;
+        let removed = logout_all_stores(
+            &self.codex_home,
+            &self.project_auth_dirs,
+            self.auth_credentials_store_mode,
+        )?;
         // Always reload to clear any cached auth (even if file absent).
         self.reload().await;
         Ok(removed)
@@ -1756,7 +1845,11 @@ impl AuthManager {
         if let Err(err) = revoke_auth_tokens(auth_dot_json.as_ref()).await {
             tracing::warn!("failed to revoke auth tokens during logout: {err}");
         }
-        let result = logout_all_stores(&self.codex_home, self.auth_credentials_store_mode)?;
+        let result = logout_all_stores(
+            &self.codex_home,
+            &self.project_auth_dirs,
+            self.auth_credentials_store_mode,
+        )?;
         // Always reload to clear any cached auth (even if file absent).
         self.reload().await;
         Ok(result)

@@ -888,6 +888,10 @@ impl AuthManagerConfig for Config {
         self.cli_auth_credentials_store_mode
     }
 
+    fn project_auth_dirs(&self) -> Vec<PathBuf> {
+        Config::project_auth_dirs(self)
+    }
+
     fn forced_chatgpt_workspace_id(&self) -> Option<String> {
         self.forced_chatgpt_workspace_id.clone()
     }
@@ -1074,6 +1078,14 @@ impl ConfigBuilder {
 }
 
 impl Config {
+    /// Project `.codex` directories to check for `auth.json`, from nearest to
+    /// farthest. This includes disabled project config layers because a
+    /// project-local auth file is explicit credential data, not executable
+    /// project configuration.
+    pub fn project_auth_dirs(&self) -> Vec<PathBuf> {
+        project_auth_dirs_from_layer_stack(&self.config_layer_stack)
+    }
+
     pub fn legacy_sandbox_policy(&self) -> SandboxPolicy {
         self.permissions.legacy_sandbox_policy(self.cwd.as_path())
     }
@@ -1297,6 +1309,31 @@ pub async fn load_config_as_toml_with_cli_and_load_options(
     cli_overrides: Vec<(String, TomlValue)>,
     options: impl Into<ConfigLoadOptions>,
 ) -> std::io::Result<ConfigToml> {
+    Ok(load_config_as_toml_with_project_auth_dirs_and_load_options(
+        codex_home,
+        cwd,
+        cli_overrides,
+        options,
+    )
+    .await?
+    .config_toml)
+}
+
+pub struct ConfigTomlWithProjectAuthDirs {
+    pub config_toml: ConfigToml,
+    pub project_auth_dirs: Vec<PathBuf>,
+}
+
+/// DEPRECATED for most callers: prefer [Config::load_with_cli_overrides()] or
+/// [ConfigBuilder] because working with [ConfigToml] directly means
+/// [ConfigRequirements] have not been applied yet, which risks skipping
+/// required constraints.
+pub async fn load_config_as_toml_with_project_auth_dirs_and_load_options(
+    codex_home: &Path,
+    cwd: Option<&AbsolutePathBuf>,
+    cli_overrides: Vec<(String, TomlValue)>,
+    options: impl Into<ConfigLoadOptions>,
+) -> std::io::Result<ConfigTomlWithProjectAuthDirs> {
     let config_layer_stack = load_config_layers_state(
         LOCAL_FS.as_ref(),
         codex_home,
@@ -1308,13 +1345,38 @@ pub async fn load_config_as_toml_with_cli_and_load_options(
     )
     .await?;
 
+    let project_auth_dirs = project_auth_dirs_from_layer_stack(&config_layer_stack);
     let merged_toml = config_layer_stack.effective_config();
-    let cfg = deserialize_config_toml_with_base(merged_toml, codex_home).map_err(|e| {
+    let config_toml = deserialize_config_toml_with_base(merged_toml, codex_home).map_err(|e| {
         tracing::error!("Failed to deserialize overridden config: {e}");
         e
     })?;
 
-    Ok(cfg)
+    Ok(ConfigTomlWithProjectAuthDirs {
+        config_toml,
+        project_auth_dirs,
+    })
+}
+
+fn project_auth_dirs_from_layer_stack(config_layer_stack: &ConfigLayerStack) -> Vec<PathBuf> {
+    config_layer_stack
+        .get_layers(
+            ConfigLayerStackOrdering::HighestPrecedenceFirst,
+            /*include_disabled*/ true,
+        )
+        .into_iter()
+        .filter_map(|layer| match &layer.name {
+            ConfigLayerSource::Project { dot_codex_folder } => {
+                Some(dot_codex_folder.as_path().to_path_buf())
+            }
+            ConfigLayerSource::Mdm { .. }
+            | ConfigLayerSource::System { .. }
+            | ConfigLayerSource::User { .. }
+            | ConfigLayerSource::SessionFlags
+            | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. }
+            | ConfigLayerSource::LegacyManagedConfigTomlFromMdm => None,
+        })
+        .collect()
 }
 
 pub fn deserialize_config_toml_with_base(

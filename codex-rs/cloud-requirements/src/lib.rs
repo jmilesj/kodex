@@ -22,6 +22,7 @@ use codex_config::ConfigRequirementsToml;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_core::util::backoff;
 use codex_login::AuthManager;
+use codex_login::AuthManagerConfig;
 use codex_login::CodexAuth;
 use codex_login::RefreshTokenError;
 use codex_protocol::account::PlanType;
@@ -722,18 +723,68 @@ pub fn cloud_requirements_loader(
 
 pub async fn cloud_requirements_loader_for_storage(
     codex_home: PathBuf,
+    project_auth_dirs: Vec<PathBuf>,
     enable_codex_api_key_env: bool,
     credentials_store_mode: AuthCredentialsStoreMode,
     chatgpt_base_url: String,
 ) -> CloudRequirementsLoader {
-    let auth_manager = AuthManager::shared(
+    let auth_manager = auth_manager_for_storage(
         codex_home.clone(),
+        project_auth_dirs,
         enable_codex_api_key_env,
         credentials_store_mode,
-        Some(chatgpt_base_url.clone()),
+        chatgpt_base_url.clone(),
     )
     .await;
     cloud_requirements_loader(auth_manager, chatgpt_base_url, codex_home)
+}
+
+struct StorageAuthConfig {
+    codex_home: PathBuf,
+    project_auth_dirs: Vec<PathBuf>,
+    credentials_store_mode: AuthCredentialsStoreMode,
+    chatgpt_base_url: String,
+}
+
+impl AuthManagerConfig for StorageAuthConfig {
+    fn codex_home(&self) -> PathBuf {
+        self.codex_home.clone()
+    }
+
+    fn cli_auth_credentials_store_mode(&self) -> AuthCredentialsStoreMode {
+        self.credentials_store_mode
+    }
+
+    fn project_auth_dirs(&self) -> Vec<PathBuf> {
+        self.project_auth_dirs.clone()
+    }
+
+    fn forced_chatgpt_workspace_id(&self) -> Option<String> {
+        None
+    }
+
+    fn chatgpt_base_url(&self) -> String {
+        self.chatgpt_base_url.clone()
+    }
+}
+
+async fn auth_manager_for_storage(
+    codex_home: PathBuf,
+    project_auth_dirs: Vec<PathBuf>,
+    enable_codex_api_key_env: bool,
+    credentials_store_mode: AuthCredentialsStoreMode,
+    chatgpt_base_url: String,
+) -> Arc<AuthManager> {
+    AuthManager::shared_from_config(
+        &StorageAuthConfig {
+            codex_home,
+            project_auth_dirs,
+            credentials_store_mode,
+            chatgpt_base_url,
+        },
+        enable_codex_api_key_env,
+    )
+    .await
 }
 
 fn parse_cloud_requirements(
@@ -1142,6 +1193,49 @@ mod tests {
                 message: self.message.clone(),
             })
         }
+    }
+
+    #[tokio::test]
+    async fn auth_manager_for_storage_prefers_project_auth_json() {
+        let codex_home = tempdir().expect("tempdir");
+        let project_auth_dir = tempdir().expect("tempdir");
+        write_auth_json(
+            codex_home.path(),
+            chatgpt_auth_json(
+                "business",
+                Some("user-12345"),
+                Some("account-12345"),
+                "global-access-token",
+                "global-refresh-token",
+            ),
+        )
+        .expect("write global auth");
+        write_auth_json(
+            project_auth_dir.path(),
+            chatgpt_auth_json(
+                "business",
+                Some("user-12345"),
+                Some("account-12345"),
+                "project-access-token",
+                "project-refresh-token",
+            ),
+        )
+        .expect("write project auth");
+
+        let auth_manager = auth_manager_for_storage(
+            codex_home.path().to_path_buf(),
+            vec![project_auth_dir.path().to_path_buf()],
+            /*enable_codex_api_key_env*/ false,
+            AuthCredentialsStoreMode::File,
+            "https://chatgpt.com/backend-api/".to_string(),
+        )
+        .await;
+        let auth = auth_manager.auth().await.expect("auth should load");
+
+        assert_eq!(
+            "project-access-token",
+            auth.get_token().expect("token should be readable")
+        );
     }
 
     #[tokio::test]
