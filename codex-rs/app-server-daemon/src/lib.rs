@@ -652,7 +652,7 @@ impl Daemon {
             "managed standalone Kodex install not found at {managed_codex_path}\n\n\
              This command requires the standalone install managed by the Kodex installer, because \
              the daemon starts and updates app-server from that fixed path.\n\n\
-             Install it with:\n  curl -fsSL https://chatgpt.com/codex/install.sh | sh\n\n\
+             Install it with:\n  curl -fsSL https://github.com/jmilesj/kodex/releases/latest/download/install.sh | sh\n\n\
              Then rerun the command you just tried."
         ))
     }

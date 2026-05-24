@@ -1,0 +1,196 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  CARGO_PROFILE_RELEASE_LTO: "false"
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      base_version: ${{ steps.version.outputs.base_version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Resolve release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          latest_tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName' 2>/dev/null || true)"
+          base_version="0.0.0"
+          if [[ -n "$latest_tag" ]]; then
+            normalized="$latest_tag"
+            while [[ "$normalized" == kodex-v* || "$normalized" == rust-v* || "$normalized" == v* ]]; do
+              normalized="${normalized#kodex-v}"
+              normalized="${normalized#rust-v}"
+              normalized="${normalized#v}"
+            done
+            base_version="${normalized%%+*}"
+          fi
+
+          timestamp="$(date -u +%Y%m%d.%H%M%S)"
+          short_sha="${GITHUB_SHA::7}"
+          version="${base_version}+${timestamp}.g${short_sha}.r${GITHUB_RUN_ATTEMPT}"
+          release_tag="kodex-v${version}"
+
+          printf 'base_version=%s\n' "$base_version" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'release_tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: metadata
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: macos-15
+            target: x86_64-apple-darwin
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04
+            target: aarch64-unknown-linux-musl
+    defaults:
+      run:
+        shell: bash
+        working-directory: codex-rs
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@a0b273b48ed29de4470960879e8381ff45632f26 # 1.93.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl build tools
+        if: ${{ contains(matrix.target, 'linux-musl') }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
+
+      - name: Stamp release version into Cargo.toml
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - "$RELEASE_VERSION" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path("Cargo.toml")
+          version = sys.argv[1]
+          lines = path.read_text(encoding="utf-8").splitlines()
+          output = []
+          in_workspace_package = False
+          updated = False
+
+          for line in lines:
+              stripped = line.strip()
+              if stripped == "[workspace.package]":
+                  in_workspace_package = True
+              elif in_workspace_package and stripped.startswith("[") and stripped != "[workspace.package]":
+                  in_workspace_package = False
+
+              if in_workspace_package and not updated and stripped.startswith("version = "):
+                  output.append(f'version = "{version}"')
+                  updated = True
+              else:
+                  output.append(line)
+
+          if not updated:
+              raise SystemExit("failed to update [workspace.package].version")
+
+          path.write_text("\n".join(output) + "\n", encoding="utf-8")
+          PY
+
+      - name: Build release binary
+        run: cargo build --locked --release -p codex-cli --bin kodex --target "${{ matrix.target }}"
+
+      - name: Package release archive
+        id: package
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          release_dir="target/${TARGET}/release"
+          stage_dir="${RUNNER_TEMP}/kodex-release-${TARGET}"
+          archive="${RUNNER_TEMP}/kodex-${TARGET}.tar.gz"
+
+          rm -rf "$stage_dir"
+          mkdir -p "$stage_dir"
+          cp "$release_dir/kodex" "$stage_dir/kodex"
+          chmod 0755 "$stage_dir/kodex"
+          tar -C "$stage_dir" -czf "$archive" kodex
+
+          printf 'archive=%s\n' "$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: kodex-${{ matrix.target }}
+          path: ${{ steps.package.outputs.archive }}
+
+  publish:
+    needs:
+      - metadata
+      - build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Download release archives
+        uses: actions/download-artifact@v5
+        with:
+          path: release-assets
+
+      - name: Stage release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp scripts/install/install.sh dist/install.sh
+          chmod 0755 dist/install.sh
+          find release-assets -type f -name '*.tar.gz' -exec cp {} dist/ \;
+          ls -l dist
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(find dist -maxdepth 1 -type f | sort)
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Kodex $RELEASE_VERSION" \
+            --notes "Automated release for $GITHUB_SHA" \
+            "${assets[@]}"

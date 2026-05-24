@@ -5,6 +5,9 @@ use codex_install_context::InstallMethod;
 #[cfg(any(not(debug_assertions), test))]
 use codex_install_context::StandalonePlatform;
 
+const INSTALL_SCRIPT_COMMAND: &str =
+    "curl -fsSL https://github.com/jmilesj/kodex/releases/latest/download/install.sh | sh";
+
 /// Update action the CLI should perform after the TUI exits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateAction {
@@ -16,8 +19,6 @@ pub enum UpdateAction {
     BrewUpgrade,
     /// Update via the disabled `kodex update` command.
     StandaloneUnix,
-    /// Update via the disabled `kodex update` command.
-    StandaloneWindows,
 }
 
 impl UpdateAction {
@@ -27,10 +28,14 @@ impl UpdateAction {
             InstallMethod::Npm => Some(UpdateAction::NpmGlobalLatest),
             InstallMethod::Bun => Some(UpdateAction::BunGlobalLatest),
             InstallMethod::Brew => Some(UpdateAction::BrewUpgrade),
-            InstallMethod::Standalone { platform, .. } => Some(match platform {
-                StandalonePlatform::Unix => UpdateAction::StandaloneUnix,
-                StandalonePlatform::Windows => UpdateAction::StandaloneWindows,
-            }),
+            InstallMethod::Standalone {
+                platform: StandalonePlatform::Unix,
+                ..
+            } => Some(UpdateAction::StandaloneUnix),
+            InstallMethod::Standalone {
+                platform: StandalonePlatform::Windows,
+                ..
+            } => None,
             InstallMethod::Other => None,
         }
     }
@@ -41,19 +46,7 @@ impl UpdateAction {
             UpdateAction::NpmGlobalLatest => ("npm", &["install", "-g", "kodex"]),
             UpdateAction::BunGlobalLatest => ("bun", &["install", "-g", "kodex"]),
             UpdateAction::BrewUpgrade => ("brew", &["upgrade", "--cask", "kodex"]),
-            UpdateAction::StandaloneUnix => (
-                "sh",
-                &["-c", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"],
-            ),
-            UpdateAction::StandaloneWindows => (
-                "powershell",
-                &[
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-c",
-                    "irm https://chatgpt.com/codex/install.ps1 | iex",
-                ],
-            ),
+            UpdateAction::StandaloneUnix => ("sh", &["-c", INSTALL_SCRIPT_COMMAND]),
         }
     }
 
@@ -131,7 +124,7 @@ mod tests {
                 },
                 package_layout: None,
             }),
-            Some(UpdateAction::StandaloneWindows)
+            None
         );
     }
 
@@ -139,22 +132,7 @@ mod tests {
     fn update_commands_delegate_to_disabled_update_subcommand() {
         assert_eq!(
             UpdateAction::StandaloneUnix.command_args(),
-            (
-                "sh",
-                &["-c", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"][..],
-            )
-        );
-        assert_eq!(
-            UpdateAction::StandaloneWindows.command_args(),
-            (
-                "powershell",
-                &[
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-c",
-                    "irm https://chatgpt.com/codex/install.ps1 | iex",
-                ][..],
-            )
+            ("sh", &["-c", INSTALL_SCRIPT_COMMAND][..],)
         );
     }
 }

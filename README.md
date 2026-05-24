@@ -1,4 +1,3 @@
-<p align="center"><code>npm i -g kodex</code><br />or <code>brew install --cask kodex</code></p>
 <p align="center"><strong>Kodex CLI</strong> is a coding agent that runs locally on your computer.
 <p align="center">
   <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Kodex CLI splash" width="80%" />
@@ -17,33 +16,15 @@ If you want Kodex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 Run the following on Mac or Linux to install Codex CLI:
 
 ```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
-```
-
-Run the following on Windows to install Codex CLI:
-
-```
-powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
-```
-
-Codex CLI can also be installed via the following package managers:
-
-```shell
-# Install using npm
-npm install -g kodex
-```
-
-```shell
-# Install using Homebrew
-brew install --cask kodex
+curl -fsSL https://github.com/jmilesj/kodex/releases/latest/download/install.sh | sh
 ```
 
 Then simply run `kodex` to get started.
 
 <details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
+<summary>You can also go to the <a href="https://github.com/jmilesj/kodex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
 
-Each GitHub Release contains many executables, but in practice, you likely want one of these:
+Each GitHub Release contains the release installer plus platform-specific binaries:
 
 - macOS
   - Apple Silicon/arm64: `kodex-aarch64-apple-darwin.tar.gz`
@@ -51,8 +32,6 @@ Each GitHub Release contains many executables, but in practice, you likely want 
 - Linux
   - x86_64: `kodex-x86_64-unknown-linux-musl.tar.gz`
   - arm64: `kodex-aarch64-unknown-linux-musl.tar.gz`
-
-Each archive contains a single entry with the platform baked into the name (e.g., `kodex-x86_64-unknown-linux-musl`), so you likely want to rename it to `kodex` after extracting it.
 
 </details>
 

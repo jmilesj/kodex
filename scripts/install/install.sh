@@ -3,6 +3,7 @@
 set -eu
 
 RELEASE="latest"
+REPO_SLUG="jmilesj/kodex"
 
 BIN_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
 BIN_PATH="$BIN_DIR/kodex"
@@ -30,20 +31,33 @@ warn() {
 }
 
 normalize_version() {
-  case "$1" in
+  version="$1"
+
+  case "$version" in
     "" | latest)
       printf 'latest\n'
-      ;;
-    rust-v*)
-      printf '%s\n' "${1#rust-v}"
-      ;;
-    v*)
-      printf '%s\n' "${1#v}"
-      ;;
-    *)
-      printf '%s\n' "$1"
+      return
       ;;
   esac
+
+  while :; do
+    case "$version" in
+      kodex-v*)
+        version="${version#kodex-v}"
+        ;;
+      rust-v*)
+        version="${version#rust-v}"
+        ;;
+      v*)
+        version="${version#v}"
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  printf '%s\n' "$version"
 }
 
 parse_args() {
@@ -111,13 +125,13 @@ release_url_for_asset() {
   asset="$1"
   resolved_version="$2"
 
-  printf 'https://github.com/openai/codex/releases/download/rust-v%s/%s\n' "$resolved_version" "$asset"
+  printf 'https://github.com/%s/releases/download/kodex-v%s/%s\n' "$REPO_SLUG" "$resolved_version" "$asset"
 }
 
 release_metadata_url() {
   resolved_version="$1"
 
-  printf 'https://api.github.com/repos/openai/codex/releases/tags/rust-v%s\n' "$resolved_version"
+  printf 'https://api.github.com/repos/%s/releases/tags/kodex-v%s\n' "$REPO_SLUG" "$resolved_version"
 }
 
 release_asset_digest_or_empty() {
@@ -190,31 +204,6 @@ release_asset_digest() {
   printf '%s\n' "$digest"
 }
 
-package_archive_digest() {
-  asset="$1"
-  manifest_path="$2"
-
-  digest="$(awk -v asset="$asset" '
-    $2 == asset && $1 ~ /^[0-9a-fA-F]{64}$/ {
-      print tolower($1)
-      found = 1
-      exit
-    }
-    END {
-      if (!found) {
-        exit 1
-      }
-    }
-  ' "$manifest_path" 2>/dev/null || true)"
-
-  if [ -z "$digest" ]; then
-    echo "Could not find SHA-256 digest for $asset in codex-package_SHA256SUMS." >&2
-    exit 1
-  fi
-
-  printf '%s\n' "$digest"
-}
-
 file_sha256() {
   path="$1"
 
@@ -265,10 +254,11 @@ resolve_version() {
     return
   fi
 
-  release_json="$(download_text "https://api.github.com/repos/openai/codex/releases/latest")"
-  resolved="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name":[[:space:]]*"rust-v\([^"]*\)".*/\1/p' | head -n 1)"
+  release_json="$(download_text "https://api.github.com/repos/jmilesj/kodex/releases/latest")"
+  release_tag="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  resolved="$(normalize_version "$release_tag")"
 
-  if [ -z "$resolved" ]; then
+  if [ -z "$release_tag" ] || [ "$resolved" = "latest" ]; then
     echo "Failed to resolve the latest Kodex release version." >&2
     exit 1
   fi
@@ -655,39 +645,8 @@ install_package_release() {
   rm -rf "$stage_release"
   mkdir -p "$stage_release"
   tar -xzf "$archive_path" -C "$stage_release"
-  chmod 0755 "$stage_release/bin/codex" "$stage_release/codex-path/rg"
-  if [ -f "$stage_release/codex-resources/bwrap" ]; then
-    chmod 0755 "$stage_release/codex-resources/bwrap"
-  fi
-  ln -sf "bin/codex" "$stage_release/codex"
-
-  if [ -e "$release_dir" ] || [ -L "$release_dir" ]; then
-    rm -rf "$release_dir"
-  fi
-  mv "$stage_release" "$release_dir"
-}
-
-install_legacy_platform_npm_release() {
-  release_dir="$1"
-  archive_path="$2"
-  target="$3"
-  stage_release="$RELEASES_DIR/.staging.$(basename "$release_dir").$$"
-  extract_dir="$tmp_dir/extract"
-  vendor_root="$extract_dir/package/vendor/$target"
-
-  mkdir -p "$RELEASES_DIR"
-  rm -rf "$stage_release" "$extract_dir"
-  mkdir -p "$stage_release/codex-resources" "$extract_dir"
-  tar -xzf "$archive_path" -C "$extract_dir"
-
-  cp "$vendor_root/codex/codex" "$stage_release/codex"
-  cp "$vendor_root/path/rg" "$stage_release/codex-resources/rg"
-  chmod 0755 "$stage_release/codex" "$stage_release/codex-resources/rg"
-
-  if [ -f "$vendor_root/codex-resources/bwrap" ]; then
-    cp "$vendor_root/codex-resources/bwrap" "$stage_release/codex-resources/bwrap"
-    chmod 0755 "$stage_release/codex-resources/bwrap"
-  fi
+  chmod 0755 "$stage_release/kodex"
+  ln -sf "kodex" "$stage_release/codex"
 
   if [ -e "$release_dir" ] || [ -L "$release_dir" ]; then
     rm -rf "$release_dir"
@@ -705,16 +664,8 @@ release_dir_is_complete() {
   [ "$(basename "$release_dir")" = "$expected_version-$expected_target" ] || return 1
 
   case "$layout" in
-    package)
-      [ -f "$release_dir/codex-package.json" ] &&
-        [ -x "$release_dir/bin/codex" ] &&
-        [ -x "$release_dir/codex" ] &&
-        [ -x "$release_dir/codex-path/rg" ] ||
-        return 1
-      ;;
-    legacy-platform-npm)
-      [ -x "$release_dir/codex" ] &&
-        [ -x "$release_dir/codex-resources/rg" ] ||
+    binary)
+      [ -x "$release_dir/kodex" ] ||
         return 1
       ;;
     *)
@@ -722,10 +673,7 @@ release_dir_is_complete() {
       ;;
   esac
 
-  case "$layout:$expected_target" in
-    package:*linux* | legacy-platform-npm:*linux*) [ -x "$release_dir/codex-resources/bwrap" ] ;;
-    *) true ;;
-  esac
+  true
 }
 
 update_current_link() {
@@ -736,13 +684,7 @@ update_current_link() {
 }
 
 release_codex_relative_path() {
-  release_dir="$1"
-
-  if [ -x "$release_dir/bin/codex" ]; then
-    printf 'bin/codex\n'
-  else
-    printf 'codex\n'
-  fi
+  printf 'kodex\n'
 }
 
 update_visible_command() {
@@ -772,9 +714,9 @@ case "$(uname -s)" in
     os="linux"
     ;;
   *)
-    echo "install.sh supports macOS and Linux. Use install.ps1 on Windows." >&2
+    echo "install.sh supports macOS and Linux." >&2
     exit 1
-    ;;
+  ;;
 esac
 
 case "$(uname -m)" in
@@ -798,42 +740,31 @@ fi
 
 if [ "$os" = "darwin" ]; then
   if [ "$arch" = "aarch64" ]; then
-    npm_tag="darwin-arm64"
     vendor_target="aarch64-apple-darwin"
     platform_label="macOS (Apple Silicon)"
   else
-    npm_tag="darwin-x64"
     vendor_target="x86_64-apple-darwin"
     platform_label="macOS (Intel)"
   fi
 else
   if [ "$arch" = "aarch64" ]; then
-    npm_tag="linux-arm64"
     vendor_target="aarch64-unknown-linux-musl"
     platform_label="Linux (ARM64)"
   else
-    npm_tag="linux-x64"
     vendor_target="x86_64-unknown-linux-musl"
     platform_label="Linux (x64)"
   fi
 fi
 
 resolved_version="$(resolve_version)"
-package_asset="codex-package-$vendor_target.tar.gz"
-checksum_asset="codex-package_SHA256SUMS"
-if release_asset_exists "$package_asset" "$resolved_version" &&
-  release_asset_exists "$checksum_asset" "$resolved_version"; then
-  install_layout="package"
-  asset="$package_asset"
-elif release_asset_exists "codex-npm-$npm_tag-$resolved_version.tgz" "$resolved_version"; then
-  install_layout="legacy-platform-npm"
-  asset="codex-npm-$npm_tag-$resolved_version.tgz"
+asset="kodex-$vendor_target.tar.gz"
+if release_asset_exists "$asset" "$resolved_version"; then
+  install_layout="binary"
 else
-  echo "Could not find Kodex package or platform npm release assets for Kodex $resolved_version." >&2
+  echo "Could not find Kodex binary release assets for Kodex $resolved_version." >&2
   exit 1
 fi
 download_url="$(release_url_for_asset "$asset" "$resolved_version")"
-checksum_url="$(release_url_for_asset "$checksum_asset" "$resolved_version")"
 release_name="$resolved_version-$vendor_target"
 release_dir="$RELEASES_DIR/$release_name"
 current_version="$(current_installed_version)"
@@ -868,26 +799,14 @@ if ! release_dir_is_complete "$release_dir" "$resolved_version" "$vendor_target"
   fi
 
   archive_path="$tmp_dir/$asset"
-  checksum_path="$tmp_dir/$checksum_asset"
 
   step "Downloading Kodex CLI"
-  if [ "$install_layout" = "package" ]; then
-    checksum_digest="$(release_asset_digest "$checksum_asset" "$resolved_version")"
-    download_file "$checksum_url" "$checksum_path"
-    verify_archive_digest "$checksum_path" "$checksum_digest"
-    expected_digest="$(package_archive_digest "$asset" "$checksum_path")"
-  else
-    expected_digest="$(release_asset_digest "$asset" "$resolved_version")"
-  fi
+  expected_digest="$(release_asset_digest "$asset" "$resolved_version")"
   download_file "$download_url" "$archive_path"
   verify_archive_digest "$archive_path" "$expected_digest"
 
-  step "Installing standalone package to $release_dir"
-  if [ "$install_layout" = "package" ]; then
-    install_package_release "$release_dir" "$archive_path"
-  else
-    install_legacy_platform_npm_release "$release_dir" "$archive_path" "$vendor_target"
-  fi
+  step "Installing standalone binary to $release_dir"
+  install_package_release "$release_dir" "$archive_path"
 fi
 update_current_link "$release_dir"
 update_visible_command "$release_dir"
