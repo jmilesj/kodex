@@ -298,6 +298,7 @@ fn is_ephemeral_thread_goal_error(err: &color_eyre::Report) -> bool {
     err.chain().any(|cause| {
         let message = cause.to_string();
         message.contains("ephemeral thread does not support goals")
+            || message.contains("sqlite state db unavailable for thread goals")
             || message.contains("thread goals require a persisted thread; this thread is ephemeral")
     })
 }
@@ -327,6 +328,19 @@ mod tests {
     fn thread_goal_error_message_explains_temporary_session() {
         let err = color_eyre::eyre::eyre!(
             "thread/goal/get failed: ephemeral thread does not support goals: thread-1"
+        )
+        .wrap_err("thread/goal/get failed in TUI");
+
+        assert_eq!(
+            thread_goal_error_message("read", &err),
+            EPHEMERAL_THREAD_GOAL_ERROR_MESSAGE
+        );
+    }
+
+    #[test]
+    fn thread_goal_error_message_explains_missing_state_db() {
+        let err = color_eyre::eyre::eyre!(
+            "thread/goal/get failed: sqlite state db unavailable for thread goals"
         )
         .wrap_err("thread/goal/get failed in TUI");
 
