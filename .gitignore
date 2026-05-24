@@ -70,6 +70,7 @@ coverage/
 # personal files
 personal/
 .worktrees/
+.codex/
 
 # os
 .DS_Store
