@@ -55,6 +55,7 @@ jobs:
             target: aarch64-unknown-linux-gnu
     env:
       TARGET: ${{ matrix.target }}
+      KODEX_CLI_VERSION: ${{ needs.metadata.outputs.version }}
     defaults:
       run:
         shell: bash
@@ -80,44 +81,10 @@ jobs:
             ~/.cargo/git
             ~/.cargo/.rusty_v8
             codex-rs/target/${{ matrix.target }}
-          key: kodex-release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/Cargo.toml') }}
+          key: kodex-release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/Cargo.toml') }}-${{ github.sha }}
           restore-keys: |
+            kodex-release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/Cargo.toml') }}-
             kodex-release-${{ runner.os }}-${{ matrix.target }}-
-
-      - name: Stamp release version into Cargo.toml
-        env:
-          RELEASE_VERSION: ${{ needs.metadata.outputs.cargo_version }}
-        run: |
-          set -euo pipefail
-          python3 - "$RELEASE_VERSION" <<'PY'
-          from pathlib import Path
-          import sys
-
-          path = Path("Cargo.toml")
-          version = sys.argv[1]
-          lines = path.read_text(encoding="utf-8").splitlines()
-          output = []
-          in_workspace_package = False
-          updated = False
-
-          for line in lines:
-              stripped = line.strip()
-              if stripped == "[workspace.package]":
-                  in_workspace_package = True
-              elif in_workspace_package and stripped.startswith("[") and stripped != "[workspace.package]":
-                  in_workspace_package = False
-
-              if in_workspace_package and not updated and stripped.startswith("version = "):
-                  output.append(f'version = "{version}"')
-                  updated = True
-              else:
-                  output.append(line)
-
-          if not updated:
-              raise SystemExit("failed to update [workspace.package].version")
-
-          path.write_text("\n".join(output) + "\n", encoding="utf-8")
-          PY
 
       - name: Build release binary
         run: cargo build --release -p codex-cli --bin kodex --target "$TARGET"
@@ -131,7 +98,7 @@ jobs:
             ~/.cargo/git
             ~/.cargo/.rusty_v8
             codex-rs/target/${{ matrix.target }}
-          key: kodex-release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/Cargo.toml') }}
+          key: kodex-release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/Cargo.toml') }}-${{ github.sha }}
 
       - name: Package release archive
         id: package

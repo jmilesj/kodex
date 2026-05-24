@@ -51,6 +51,7 @@ mod mcp_cmd;
 mod plugin_cmd;
 mod remote_control_cmd;
 mod state_db_recovery;
+mod version;
 #[cfg(not(windows))]
 mod wsl_paths;
 
@@ -89,7 +90,7 @@ const USER_FACING_CLI_NAME: &str = "kodex";
 #[derive(Debug, Parser)]
 #[clap(
     author,
-    version,
+    version = crate::version::KODEX_CLI_VERSION,
     // If a sub‑command is given, ignore requirements of the default args.
     subcommand_negates_reqs = true,
     // The executable is sometimes invoked via a platform‑specific name like
@@ -2390,7 +2391,8 @@ mod tests {
     #[test]
     fn version_uses_kodex_command_name() {
         let version = version_from_args(&["kodex", "--version"]);
-        assert!(version.starts_with("kodex "), "{version}");
+        let expected = format!("kodex {}\n", crate::version::KODEX_CLI_VERSION);
+        assert_eq!(version, expected);
     }
 
     #[test]
