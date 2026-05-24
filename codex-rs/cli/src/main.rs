@@ -93,7 +93,7 @@ const USER_FACING_CLI_NAME: &str = "kodex";
     // If a sub‑command is given, ignore requirements of the default args.
     subcommand_negates_reqs = true,
     // The executable is sometimes invoked via a platform‑specific name like
-    // `kodex-x86_64-unknown-linux-musl`, but the help output should always use
+    // `kodex-x86_64-unknown-linux-gnu`, but the help output should always use
     // the generic `kodex` command name that users run.
     name = USER_FACING_CLI_NAME,
     bin_name = USER_FACING_CLI_NAME,

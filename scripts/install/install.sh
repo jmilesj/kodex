@@ -748,10 +748,10 @@ if [ "$os" = "darwin" ]; then
   fi
 else
   if [ "$arch" = "aarch64" ]; then
-    vendor_target="aarch64-unknown-linux-musl"
+    vendor_target="aarch64-unknown-linux-gnu"
     platform_label="Linux (ARM64)"
   else
-    vendor_target="x86_64-unknown-linux-musl"
+    vendor_target="x86_64-unknown-linux-gnu"
     platform_label="Linux (x64)"
   fi
 fi

@@ -30,8 +30,8 @@ Each GitHub Release contains the release installer plus platform-specific binari
   - Apple Silicon/arm64: `kodex-aarch64-apple-darwin.tar.gz`
   - x86_64 (older Mac hardware): `kodex-x86_64-apple-darwin.tar.gz`
 - Linux
-  - x86_64: `kodex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `kodex-aarch64-unknown-linux-musl.tar.gz`
+  - x86_64: `kodex-x86_64-unknown-linux-gnu.tar.gz`
+  - arm64: `kodex-aarch64-unknown-linux-gnu.tar.gz`
 
 </details>
 

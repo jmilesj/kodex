@@ -54,9 +54,19 @@ jobs:
 
   build:
     needs: metadata
-    runs-on: macos-15
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
     env:
-      TARGET: aarch64-apple-darwin
+      TARGET: ${{ matrix.target }}
     defaults:
       run:
         shell: bash
@@ -70,7 +80,21 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@a0b273b48ed29de4470960879e8381ff45632f26 # 1.93.0
         with:
-          targets: ${{ env.TARGET }}
+          targets: ${{ matrix.target }}
+
+      - name: Restore cargo cache
+        id: cargo_cache_restore
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.rusty_v8
+            codex-rs/target/${{ matrix.target }}
+          key: kodex-release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/Cargo.toml') }}
+          restore-keys: |
+            kodex-release-${{ runner.os }}-${{ matrix.target }}-
 
       - name: Stamp release version into Cargo.toml
         env:
@@ -110,6 +134,17 @@ jobs:
       - name: Build release binary
         run: cargo build --release -p codex-cli --bin kodex --target "$TARGET"
 
+      - name: Save cargo cache
+        if: ${{ success() && steps.cargo_cache_restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.rusty_v8
+            codex-rs/target/${{ matrix.target }}
+          key: kodex-release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/Cargo.toml') }}
+
       - name: Package release archive
         id: package
         run: |
@@ -129,7 +164,7 @@ jobs:
       - name: Upload release archive
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: kodex-aarch64-apple-darwin
+          name: kodex-${{ matrix.target }}
           path: ${{ steps.package.outputs.archive }}
 
   publish:
