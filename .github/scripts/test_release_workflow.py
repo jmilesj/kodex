@@ -11,6 +11,20 @@ RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 
 
 class ReleaseWorkflowTest(unittest.TestCase):
+    def test_metadata_job_checks_out_repo_before_resolving_version(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        lines = workflow.splitlines()
+
+        metadata_start = lines.index("  metadata:")
+        build_start = lines.index("  build:")
+        metadata_block = "\n".join(lines[metadata_start:build_start])
+
+        self.assertIn("uses: actions/checkout@", metadata_block)
+        self.assertLess(
+            metadata_block.index("uses: actions/checkout@"),
+            metadata_block.index("Resolve release version"),
+        )
+
     def test_build_uses_release_version_env_without_rewriting_cargo_toml(self) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
