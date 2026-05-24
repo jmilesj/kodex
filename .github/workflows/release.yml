@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       base_version: ${{ steps.version.outputs.base_version }}
+      cargo_version: ${{ steps.version.outputs.cargo_version }}
+      display_version: ${{ steps.version.outputs.display_version }}
       release_tag: ${{ steps.version.outputs.release_tag }}
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -34,26 +36,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          latest_tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName' 2>/dev/null || true)"
-          base_version="0.0.0"
-          if [[ -n "$latest_tag" ]]; then
-            normalized="$latest_tag"
-            while [[ "$normalized" == kodex-v* || "$normalized" == rust-v* || "$normalized" == v* ]]; do
-              normalized="${normalized#kodex-v}"
-              normalized="${normalized#rust-v}"
-              normalized="${normalized#v}"
-            done
-            base_version="${normalized%%+*}"
-          fi
-
-          timestamp="$(date -u +%Y%m%d.%H%M%S)"
-          short_sha="${GITHUB_SHA::7}"
-          version="${base_version}+${timestamp}.g${short_sha}.r${GITHUB_RUN_ATTEMPT}"
-          release_tag="kodex-v${version}"
-
-          printf 'base_version=%s\n' "$base_version" >> "$GITHUB_OUTPUT"
-          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
-          printf 'release_tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
+          upstream_tag="$(gh release view --repo openai/codex --json tagName --jq '.tagName')"
+          build_number="$(date -u +%s)"
+          python3 .github/scripts/kodex_release_version.py "$upstream_tag" "$build_number" >> "$GITHUB_OUTPUT"
 
   build:
     needs: metadata
@@ -101,7 +86,7 @@ jobs:
 
       - name: Stamp release version into Cargo.toml
         env:
-          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.cargo_version }}
         run: |
           set -euo pipefail
           python3 - "$RELEASE_VERSION" <<'PY'
@@ -191,8 +176,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp scripts/install/install.sh dist/install.sh
-          chmod 0755 dist/install.sh
           find release-assets -type f -name '*.tar.gz' -exec cp {} dist/ \;
           ls -l dist
 

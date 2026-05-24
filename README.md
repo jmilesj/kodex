@@ -16,7 +16,7 @@ If you want Kodex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 Run the following on Mac or Linux to install Codex CLI:
 
 ```shell
-curl -fsSL https://github.com/jmilesj/kodex/releases/latest/download/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/jmilesj/kodex/main/scripts/install/install.sh | sh
 ```
 
 Then simply run `kodex` to get started.
@@ -24,7 +24,7 @@ Then simply run `kodex` to get started.
 <details>
 <summary>You can also go to the <a href="https://github.com/jmilesj/kodex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
 
-Each GitHub Release contains the release installer plus platform-specific binaries:
+Each GitHub Release contains platform-specific binaries:
 
 - macOS
   - Apple Silicon/arm64: `kodex-aarch64-apple-darwin.tar.gz`

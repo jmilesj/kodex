@@ -254,7 +254,7 @@ resolve_version() {
     return
   fi
 
-  release_json="$(download_text "https://api.github.com/repos/jmilesj/kodex/releases/latest")"
+  release_json="$(download_text "https://api.github.com/repos/$REPO_SLUG/releases/latest")"
   release_tag="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
   resolved="$(normalize_version "$release_tag")"
 
@@ -481,6 +481,12 @@ version_from_binary() {
 }
 
 current_installed_version() {
+  version="$(version_from_binary "$BIN_PATH" || true)"
+  if [ -n "$version" ]; then
+    printf '%s\n' "$version"
+    return 0
+  fi
+
   version="$(version_from_binary "$CURRENT_LINK/kodex" || true)"
   if [ -n "$version" ]; then
     printf '%s\n' "$version"
@@ -500,6 +506,45 @@ current_installed_version() {
   fi
 
   return 0
+}
+
+version_compare() {
+  left="$(normalize_version "$1" | tr '+' '.')"
+  right="$(normalize_version "$2" | tr '+' '.')"
+
+  awk -v left="$left" -v right="$right" '
+    function components(version, output, idx, count, parts) {
+      sub(/-.*/, "", version)
+      count = split(version, parts, ".")
+      for (idx = 1; idx <= 4; idx++) {
+        output[idx] = 0
+        if (idx <= count && parts[idx] ~ /^[0-9]+$/) {
+          output[idx] = parts[idx] + 0
+        }
+      }
+    }
+
+    BEGIN {
+      components(left, left_parts)
+      components(right, right_parts)
+      for (idx = 1; idx <= 4; idx++) {
+        if (left_parts[idx] < right_parts[idx]) {
+          print "-1"
+          exit
+        }
+        if (left_parts[idx] > right_parts[idx]) {
+          print "1"
+          exit
+        }
+      }
+      print "0"
+    }
+  '
+}
+
+version_at_least() {
+  [ -n "$1" ] || return 1
+  [ "$(version_compare "$1" "$2")" != "-1" ]
 }
 
 resolve_existing_codex() {
@@ -758,6 +803,29 @@ fi
 
 resolved_version="$(resolve_version)"
 asset="kodex-$vendor_target.tar.gz"
+release_name="$resolved_version-$vendor_target"
+release_dir="$RELEASES_DIR/$release_name"
+current_version="$(current_installed_version)"
+
+tmp_dir="$(mktemp -d)"
+cleanup() {
+  release_install_lock
+  if [ -n "$tmp_dir" ]; then
+    rm -rf "$tmp_dir"
+  fi
+}
+trap cleanup EXIT INT TERM
+
+if version_at_least "$current_version" "$resolved_version"; then
+  step "Kodex CLI $current_version is already up to date (latest release: $resolved_version)"
+  if [ -x "$CURRENT_LINK/kodex" ]; then
+    update_visible_command "$CURRENT_LINK"
+  fi
+  add_to_path
+  print_launch_instructions
+  exit 0
+fi
+
 if release_asset_exists "$asset" "$resolved_version"; then
   install_layout="binary"
 else
@@ -765,9 +833,6 @@ else
   exit 1
 fi
 download_url="$(release_url_for_asset "$asset" "$resolved_version")"
-release_name="$resolved_version-$vendor_target"
-release_dir="$RELEASES_DIR/$release_name"
-current_version="$(current_installed_version)"
 
 if [ -n "$current_version" ] && [ "$current_version" != "$resolved_version" ]; then
   step "Updating Kodex CLI from $current_version to $resolved_version"
@@ -780,15 +845,6 @@ step "Detected platform: $platform_label"
 step "Resolved version: $resolved_version"
 
 detect_conflicting_install
-
-tmp_dir="$(mktemp -d)"
-cleanup() {
-  release_install_lock
-  if [ -n "$tmp_dir" ]; then
-    rm -rf "$tmp_dir"
-  fi
-}
-trap cleanup EXIT INT TERM
 
 acquire_install_lock
 cleanup_stale_install_artifacts
