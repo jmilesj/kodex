@@ -1,9 +1,6 @@
 name: release
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:
@@ -15,6 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
   CARGO_PROFILE_RELEASE_LTO: "false"
 
 jobs:
@@ -56,19 +54,9 @@ jobs:
 
   build:
     needs: metadata
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            target: aarch64-apple-darwin
-          - runner: macos-15
-            target: x86_64-apple-darwin
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-          - runner: ubuntu-24.04
-            target: aarch64-unknown-linux-musl
+    runs-on: macos-15
+    env:
+      TARGET: aarch64-apple-darwin
     defaults:
       run:
         shell: bash
@@ -82,14 +70,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@a0b273b48ed29de4470960879e8381ff45632f26 # 1.93.0
         with:
-          targets: ${{ matrix.target }}
-
-      - name: Install musl build tools
-        if: ${{ contains(matrix.target, 'linux-musl') }}
-        shell: bash
-        env:
-          TARGET: ${{ matrix.target }}
-        run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
+          targets: ${{ env.TARGET }}
 
       - name: Stamp release version into Cargo.toml
         env:
@@ -127,12 +108,10 @@ jobs:
           PY
 
       - name: Build release binary
-        run: cargo build --release -p codex-cli --bin kodex --target "${{ matrix.target }}"
+        run: cargo build --release -p codex-cli --bin kodex --target "$TARGET"
 
       - name: Package release archive
         id: package
-        env:
-          TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
           release_dir="target/${TARGET}/release"
@@ -150,7 +129,7 @@ jobs:
       - name: Upload release archive
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: kodex-${{ matrix.target }}
+          name: kodex-aarch64-apple-darwin
           path: ${{ steps.package.outputs.archive }}
 
   publish:
