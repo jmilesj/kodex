@@ -48,6 +48,7 @@ Run these after any upstream merge that touches the upstream anchor or local imp
 ```bash
 node --check codex-cli/bin/kodex.js
 python3 -m py_compile codex-cli/scripts/build_npm_package.py scripts/stage_npm_packages.py
+bash -n scripts/install/install.sh
 cd codex-rs
 just test -p codex-cli
 ```
@@ -66,6 +67,7 @@ Manual checks:
 - CLI help and examples use `kodex` for the user-facing command.
 - npm package `bin` exposes `kodex`, not `codex`.
 - package staging expects a `kodex` native executable.
+- `scripts/install/install.ps1` syntax and rename references still target `kodex`.
 - update commands, background update checks, and app-server updater loops do not contact upstream update services.
 - analytics and OTEL initialization stay disabled.
 

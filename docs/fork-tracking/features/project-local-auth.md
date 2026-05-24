@@ -47,6 +47,16 @@ just test -p codex-login
 just test -p codex-cli
 ```
 
+When TUI, exec, cloud requirements, or cloud task auth wiring changed upstream, also run the matching scoped tests:
+
+```bash
+cd codex-rs
+just test -p codex-tui
+just test -p codex-exec
+just test -p codex-cloud-requirements
+just test -p codex-cloud-tasks
+```
+
 Targeted tests to look for in the output:
 
 - `project_auth_dirs_include_project_codex_dirs_nearest_first`
