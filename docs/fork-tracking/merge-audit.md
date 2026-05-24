@@ -25,16 +25,15 @@ The merge commit recorded conflicts in these areas that overlap fork-only behavi
 
 | Feature | Result | Evidence | Follow-up |
 | --- | --- | --- | --- |
-| Kodex CLI rename, telemetry disablement, and update disablement | `needs review` | Merge conflicts were resolved and syntax checks were run for shell, Python, and Node packaging paths. The dedicated fork tracking docs did not exist at merge time, so the feature still needs a tracked verification pass. | Run the verification steps in `features/kodex-cli-rename.md`, then update `registry.md` and this audit entry's follow-up status in a later entry. |
-| Project-local auth files | `needs review` | Merge conflicts were resolved in config, login, and TUI auth paths. The dedicated fork tracking docs did not exist at merge time, so the feature still needs a tracked verification pass. | Run the verification steps in `features/project-local-auth.md`, then update `registry.md` and this audit entry's follow-up status in a later entry. |
+| Kodex CLI rename, telemetry disablement, and update disablement | `needs review` | Merge conflicts overlapped `README.md`, `codex-cli/bin/kodex.js`, `codex-cli/scripts/build_npm_package.py`, `codex-cli/scripts/install_native_deps.py`, `scripts/install/install.sh`, `scripts/install/install.ps1`, `scripts/stage_npm_packages.py`, `sdk/typescript/src/exec.ts`, `codex-rs/cli/src/main.rs`, `codex-rs/analytics/src/client_tests.rs`, `codex-rs/tui/src/update_action.rs`, `codex-rs/tui/src/chatwidget.rs`, and `codex-rs/tui/src/app/tests.rs`. The shell, Python, and Node syntax checks exercised the packaging side of that overlap, but the feature still needs its own behavioral verification pass. | Run the verification steps in `features/kodex-cli-rename.md`, then update `registry.md` and this audit entry's follow-up status in a later entry. |
+| Project-local auth files | `needs review` | Merge conflicts overlapped `codex-rs/core/src/config/mod.rs`, `codex-rs/login/src/auth/manager.rs`, and `codex-rs/tui/src/lib.rs`. The feature-specific auth behavior still needs its own verification pass, which is tracked in the feature note. | Run the verification steps in `features/project-local-auth.md`, then update `registry.md` and this audit entry's follow-up status in a later entry. |
 
-### General Verification Evidence
+### Supporting Checks
 
 - `bash -n scripts/install/install.sh`: passed.
 - `python3 -m py_compile codex-cli/scripts/build_npm_package.py scripts/stage_npm_packages.py`: passed.
 - `node --check codex-cli/bin/kodex.js`: passed.
 - `cargo fmt -- --config imports_granularity=Item`: passed after merge cleanup.
-- `git diff --cached --check`: reported trailing whitespace in snapshot or patch content that appeared unrelated to the merge resolution.
 - TUI crate test run failed in `app::tests::discard_side_thread_removes_agent_navigation_entry` with a stack overflow. This failure was not attributed to a fork-tracked feature during the merge.
 
 ### Outcome
