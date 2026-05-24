@@ -46,6 +46,7 @@ You can also use Kodex with an API key, but this requires [additional setup](htt
 - [**Kodex Documentation**](https://developers.openai.com/codex)
 - [**Contributing**](./docs/contributing.md)
 - [**Installing & building**](./docs/install.md)
+- [**Fork tracking**](./docs/fork-tracking/README.md)
 - [**Open source fund**](./docs/open-source-fund.md)
 
 This repository is licensed under the [Apache-2.0 License](LICENSE).

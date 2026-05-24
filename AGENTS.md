@@ -1,5 +1,9 @@
 # Rust/codex-rs
 
+This fork has fork-only behavior tracked under `docs/fork-tracking/`. Before changing release,
+install, or upstream-merge behavior, read `docs/fork-tracking/README.md` and
+`docs/fork-tracking/registry.md`.
+
 In the codex-rs folder where the rust code lives:
 
 - Crate names are prefixed with `codex-`. For example, the `core` folder's crate is named `codex-core`
