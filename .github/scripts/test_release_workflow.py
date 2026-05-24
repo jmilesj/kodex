@@ -25,21 +25,23 @@ class ReleaseWorkflowTest(unittest.TestCase):
             metadata_block.index("Resolve release version"),
         )
 
+    def test_build_job_uses_rust_cache_instead_of_manual_cache_steps(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("uses: Swatinem/rust-cache@v2", workflow)
+        self.assertIn("workspaces: |", workflow)
+        self.assertIn("codex-rs -> target", workflow)
+        self.assertIn("key: ${{ matrix.target }}", workflow)
+        self.assertNotIn("uses: actions/cache/restore@v4", workflow)
+        self.assertNotIn("uses: actions/cache/save@v4", workflow)
+
     def test_build_uses_release_version_env_without_rewriting_cargo_toml(self) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("KODEX_CLI_VERSION: ${{ needs.metadata.outputs.version }}", workflow)
+        self.assertIn('CARGO_PROFILE_RELEASE_LTO: "false"', workflow)
         self.assertNotIn("Stamp release version into Cargo.toml", workflow)
         self.assertNotIn("path = Path(\"Cargo.toml\")", workflow)
-
-    def test_cache_key_is_per_commit_with_lockfile_restore_prefix(self) -> None:
-        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
-
-        self.assertIn("${{ github.sha }}", workflow)
-        self.assertIn(
-            "kodex-release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/Cargo.toml') }}-",
-            workflow,
-        )
 
 
 if __name__ == "__main__":

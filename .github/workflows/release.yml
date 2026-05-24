@@ -76,34 +76,16 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Restore cargo cache
-        id: cargo_cache_restore
-        continue-on-error: true
-        uses: actions/cache/restore@v4
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/.rusty_v8
-            codex-rs/target/${{ matrix.target }}
-          key: kodex-release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/Cargo.toml') }}-${{ github.sha }}
-          restore-keys: |
-            kodex-release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/Cargo.toml') }}-
-            kodex-release-${{ runner.os }}-${{ matrix.target }}-
+          key: ${{ matrix.target }}
+          workspaces: |
+            codex-rs -> target
+          cache-workspace-crates: true
 
       - name: Build release binary
         run: cargo build --release -p codex-cli --bin kodex --target "$TARGET"
-
-      - name: Save cargo cache
-        if: ${{ success() && steps.cargo_cache_restore.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/.rusty_v8
-            codex-rs/target/${{ matrix.target }}
-          key: kodex-release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/Cargo.toml') }}-${{ github.sha }}
 
       - name: Package release archive
         id: package
