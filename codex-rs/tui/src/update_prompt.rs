@@ -249,11 +249,18 @@ mod tests {
     use crossterm::event::KeyModifiers;
     use ratatui::Terminal;
 
+    fn normalize_snapshot_whitespace(text: &str) -> String {
+        text.lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     fn new_prompt() -> UpdatePromptScreen {
         UpdatePromptScreen::new(
             FrameRequester::test_dummy(),
             "9.9.9".into(),
-            UpdateAction::NpmGlobalLatest,
+            UpdateAction::StandaloneUnix,
         )
     }
 
@@ -264,7 +271,11 @@ mod tests {
         terminal
             .draw(|frame| frame.render_widget_ref(&screen, frame.area()))
             .expect("render update prompt");
-        insta::assert_snapshot!("update_prompt_modal", terminal.backend());
+        let rendered = terminal.backend().vt100().screen().contents();
+        insta::assert_snapshot!(
+            "update_prompt_modal",
+            normalize_snapshot_whitespace(&rendered)
+        );
     }
 
     #[test]
