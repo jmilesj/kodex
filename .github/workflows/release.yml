@@ -127,7 +127,7 @@ jobs:
           PY
 
       - name: Build release binary
-        run: cargo build --locked --release -p codex-cli --bin kodex --target "${{ matrix.target }}"
+        run: cargo build --release -p codex-cli --bin kodex --target "${{ matrix.target }}"
 
       - name: Package release archive
         id: package
