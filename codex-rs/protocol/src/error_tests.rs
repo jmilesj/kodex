@@ -112,6 +112,27 @@ fn server_overloaded_maps_to_protocol() {
 }
 
 #[test]
+fn temporary_upstream_errors_are_retryable() {
+    let errors = vec![
+        CodexErr::UsageLimitReached(UsageLimitReachedError {
+            plan_type: None,
+            resets_at: None,
+            rate_limits: Some(Box::new(rate_limit_snapshot())),
+            promo_message: None,
+            rate_limit_reached_type: None,
+        }),
+        CodexErr::ServerOverloaded,
+        CodexErr::CyberPolicy {
+            message: "temporary policy service failure".to_string(),
+        },
+    ];
+
+    for err in errors {
+        assert!(err.is_retryable(), "{err:?} should be retryable");
+    }
+}
+
+#[test]
 fn sandbox_denied_uses_aggregated_output_when_stderr_empty() {
     let output = ExecToolCallOutput {
         exit_code: 77,

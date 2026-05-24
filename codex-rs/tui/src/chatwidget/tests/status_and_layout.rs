@@ -2565,14 +2565,6 @@ fn goal_status_indicator_formats_statuses_and_budgets() {
     );
     assert_eq!(
         goal_status_indicator_from_app_goal(&test_thread_goal(
-            codex_app_server_protocol::ThreadGoalStatus::UsageLimited,
-            /*token_budget*/ None,
-            /*tokens_used*/ 0,
-        )),
-        Some(GoalStatusIndicator::UsageLimited)
-    );
-    assert_eq!(
-        goal_status_indicator_from_app_goal(&test_thread_goal(
             codex_app_server_protocol::ThreadGoalStatus::BudgetLimited,
             /*token_budget*/ Some(50_000),
             /*tokens_used*/ 51_000,
@@ -2618,10 +2610,6 @@ fn goal_status_indicator_line_formats_goal_text() {
         ),
         (GoalStatusIndicator::Paused, "Goal paused (/goal resume)"),
         (GoalStatusIndicator::Blocked, "Goal blocked (/goal resume)"),
-        (
-            GoalStatusIndicator::UsageLimited,
-            "Goal hit usage limits (/goal resume)",
-        ),
         (
             GoalStatusIndicator::BudgetLimited { usage: None },
             "Goal abandoned",

@@ -206,7 +206,7 @@ impl GoalToolExecutor {
             ThreadGoalStatus::Complete | ThreadGoalStatus::Blocked
         ) {
             return Err(FunctionCallError::RespondToModel(
-                "update_goal can only mark the existing goal complete or blocked; pause, resume, budget-limited, and usage-limited status changes are controlled by the user or system"
+                "update_goal can only mark the existing goal complete or blocked; pause, resume, and budget-limited status changes are controlled by the user or system"
                     .to_string(),
             ));
         }
@@ -217,7 +217,6 @@ impl GoalToolExecutor {
                 ThreadGoalStatus::Blocked => codex_state::GoalAccountingMode::ActiveOrStopped,
                 ThreadGoalStatus::Active
                 | ThreadGoalStatus::Paused
-                | ThreadGoalStatus::UsageLimited
                 | ThreadGoalStatus::BudgetLimited => unreachable!("status validated above"),
             },
             invocation.call_id.as_str(),
@@ -395,7 +394,6 @@ fn protocol_status_from_state(status: codex_state::ThreadGoalStatus) -> ThreadGo
         codex_state::ThreadGoalStatus::Active => ThreadGoalStatus::Active,
         codex_state::ThreadGoalStatus::Paused => ThreadGoalStatus::Paused,
         codex_state::ThreadGoalStatus::Blocked => ThreadGoalStatus::Blocked,
-        codex_state::ThreadGoalStatus::UsageLimited => ThreadGoalStatus::UsageLimited,
         codex_state::ThreadGoalStatus::BudgetLimited => ThreadGoalStatus::BudgetLimited,
         codex_state::ThreadGoalStatus::Complete => ThreadGoalStatus::Complete,
     }
@@ -406,7 +404,6 @@ fn state_status_from_protocol(status: ThreadGoalStatus) -> codex_state::ThreadGo
         ThreadGoalStatus::Active => codex_state::ThreadGoalStatus::Active,
         ThreadGoalStatus::Paused => codex_state::ThreadGoalStatus::Paused,
         ThreadGoalStatus::Blocked => codex_state::ThreadGoalStatus::Blocked,
-        ThreadGoalStatus::UsageLimited => codex_state::ThreadGoalStatus::UsageLimited,
         ThreadGoalStatus::BudgetLimited => codex_state::ThreadGoalStatus::BudgetLimited,
         ThreadGoalStatus::Complete => codex_state::ThreadGoalStatus::Complete,
     }

@@ -33,7 +33,6 @@ pub(crate) fn goal_status_label(status: ThreadGoalStatus) -> &'static str {
         ThreadGoalStatus::Active => "active",
         ThreadGoalStatus::Paused => "paused",
         ThreadGoalStatus::Blocked => "blocked",
-        ThreadGoalStatus::UsageLimited => "usage limited",
         ThreadGoalStatus::BudgetLimited => "limited by budget",
         ThreadGoalStatus::Complete => "complete",
     }

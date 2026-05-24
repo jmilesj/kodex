@@ -43,20 +43,6 @@ async fn goal_menu_blocked_snapshot() {
 }
 
 #[tokio::test]
-async fn goal_menu_usage_limited_snapshot() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let thread_id = ThreadId::new();
-
-    chat.show_goal_summary(test_goal(
-        thread_id,
-        AppThreadGoalStatus::UsageLimited,
-        /*token_budget*/ None,
-    ));
-
-    assert_chatwidget_snapshot!("goal_menu_usage_limited", rendered_goal_summary(&mut rx));
-}
-
-#[tokio::test]
 async fn goal_menu_budget_limited_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let thread_id = ThreadId::new();
@@ -146,38 +132,33 @@ async fn goal_edit_prompt_submits_preserved_status_and_budget() {
 }
 
 #[tokio::test]
-async fn goal_edit_prompt_preserves_resumable_stopped_statuses() {
-    for stopped_status in [
-        AppThreadGoalStatus::Blocked,
-        AppThreadGoalStatus::UsageLimited,
-    ] {
-        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-        let thread_id = ThreadId::new();
+async fn goal_edit_prompt_preserves_blocked_status() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
 
-        chat.show_goal_edit_prompt(
+    chat.show_goal_edit_prompt(
+        thread_id,
+        test_goal(
             thread_id,
-            test_goal(
-                thread_id,
-                stopped_status,
-                /*token_budget*/ Some(80_000),
-            ),
-        );
-        chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+            AppThreadGoalStatus::Blocked,
+            /*token_budget*/ Some(80_000),
+        ),
+    );
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
-        match rx.try_recv() {
-            Ok(AppEvent::SetThreadGoalObjective {
-                mode:
-                    crate::app_event::ThreadGoalSetMode::UpdateExisting {
-                        status,
-                        token_budget,
-                    },
-                ..
-            }) => {
-                assert_eq!(status, stopped_status);
-                assert_eq!(token_budget, Some(80_000));
-            }
-            other => panic!("expected SetThreadGoalObjective event, got {other:?}"),
+    match rx.try_recv() {
+        Ok(AppEvent::SetThreadGoalObjective {
+            mode:
+                crate::app_event::ThreadGoalSetMode::UpdateExisting {
+                    status,
+                    token_budget,
+                },
+            ..
+        }) => {
+            assert_eq!(status, AppThreadGoalStatus::Blocked);
+            assert_eq!(token_budget, Some(80_000));
         }
+        other => panic!("expected SetThreadGoalObjective event, got {other:?}"),
     }
 }
 

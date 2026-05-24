@@ -13,7 +13,6 @@ pub enum ThreadGoalStatus {
     Active,
     Paused,
     Blocked,
-    UsageLimited,
     BudgetLimited,
     Complete,
 }
@@ -24,7 +23,6 @@ impl ThreadGoalStatus {
             Self::Active => "active",
             Self::Paused => "paused",
             Self::Blocked => "blocked",
-            Self::UsageLimited => "usage_limited",
             Self::BudgetLimited => "budget_limited",
             Self::Complete => "complete",
         }
@@ -47,7 +45,7 @@ impl TryFrom<&str> for ThreadGoalStatus {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
             "blocked" => Ok(Self::Blocked),
-            "usage_limited" => Ok(Self::UsageLimited),
+            "usage_limited" => Ok(Self::Active),
             "budget_limited" => Ok(Self::BudgetLimited),
             "complete" => Ok(Self::Complete),
             other => Err(anyhow!("unknown thread goal status `{other}`")),
@@ -111,5 +109,19 @@ impl TryFrom<ThreadGoalRow> for ThreadGoal {
             created_at: epoch_millis_to_datetime(row.created_at_ms)?,
             updated_at: epoch_millis_to_datetime(row.updated_at_ms)?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn legacy_usage_limited_status_resumes_as_active() {
+        assert_eq!(
+            ThreadGoalStatus::Active,
+            ThreadGoalStatus::try_from("usage_limited").expect("legacy status should parse")
+        );
     }
 }

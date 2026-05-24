@@ -51,7 +51,6 @@ pub(super) fn goal_status_indicator_from_app_goal(
         }),
         AppThreadGoalStatus::Paused => Some(GoalStatusIndicator::Paused),
         AppThreadGoalStatus::Blocked => Some(GoalStatusIndicator::Blocked),
-        AppThreadGoalStatus::UsageLimited => Some(GoalStatusIndicator::UsageLimited),
         AppThreadGoalStatus::BudgetLimited => Some(GoalStatusIndicator::BudgetLimited {
             usage: stopped_goal_budget_usage(goal.token_budget, goal.tokens_used),
         }),

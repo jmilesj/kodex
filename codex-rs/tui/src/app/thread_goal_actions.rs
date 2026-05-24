@@ -71,7 +71,7 @@ impl App {
         };
         if matches!(
             goal.status,
-            ThreadGoalStatus::Paused | ThreadGoalStatus::Blocked | ThreadGoalStatus::UsageLimited
+            ThreadGoalStatus::Paused | ThreadGoalStatus::Blocked
         ) {
             self.chat_widget
                 .show_resume_paused_goal_prompt(thread_id, goal.objective);
@@ -311,7 +311,6 @@ fn should_confirm_before_replacing_goal(goal: &ThreadGoal) -> bool {
         ThreadGoalStatus::Active
         | ThreadGoalStatus::Paused
         | ThreadGoalStatus::Blocked
-        | ThreadGoalStatus::UsageLimited
         | ThreadGoalStatus::BudgetLimited => true,
     }
 }
@@ -397,7 +396,6 @@ mod tests {
             ThreadGoalStatus::Active,
             ThreadGoalStatus::Paused,
             ThreadGoalStatus::Blocked,
-            ThreadGoalStatus::UsageLimited,
             ThreadGoalStatus::BudgetLimited,
         ] {
             assert!(should_confirm_before_replacing_goal(&test_goal(status)));

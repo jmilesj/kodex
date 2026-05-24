@@ -334,9 +334,6 @@ fn should_clear_active_goal(
             budget_limited_goal_disposition,
             BudgetLimitedGoalDisposition::ClearActive
         ),
-        ThreadGoalStatus::Paused
-        | ThreadGoalStatus::Blocked
-        | ThreadGoalStatus::UsageLimited
-        | ThreadGoalStatus::Complete => true,
+        ThreadGoalStatus::Paused | ThreadGoalStatus::Blocked | ThreadGoalStatus::Complete => true,
     }
 }

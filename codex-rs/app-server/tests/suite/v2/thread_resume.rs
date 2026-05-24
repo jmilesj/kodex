@@ -1007,39 +1007,34 @@ async fn thread_goal_set_persists_resumable_stopped_statuses() -> Result<()> {
     )
     .await??;
 
-    for (wire_status, expected_status) in [
-        ("blocked", ThreadGoalStatus::Blocked),
-        ("usageLimited", ThreadGoalStatus::UsageLimited),
-    ] {
-        let goal_id = mcp
-            .send_raw_request(
-                "thread/goal/set",
-                Some(json!({
-                    "threadId": thread.id.clone(),
-                    "objective": "keep polishing",
-                    "status": wire_status,
-                })),
-            )
-            .await?;
-        let goal_resp: JSONRPCResponse = timeout(
-            DEFAULT_READ_TIMEOUT,
-            mcp.read_stream_until_response_message(RequestId::Integer(goal_id)),
+    let goal_id = mcp
+        .send_raw_request(
+            "thread/goal/set",
+            Some(json!({
+                "threadId": thread.id.clone(),
+                "objective": "keep polishing",
+                "status": "blocked",
+            })),
         )
-        .await??;
-        let goal: ThreadGoalSetResponse = to_response(goal_resp)?;
-        assert_eq!(goal.goal.status, expected_status);
+        .await?;
+    let goal_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(goal_id)),
+    )
+    .await??;
+    let goal: ThreadGoalSetResponse = to_response(goal_resp)?;
+    assert_eq!(goal.goal.status, ThreadGoalStatus::Blocked);
 
-        let notification = timeout(
-            DEFAULT_READ_TIMEOUT,
-            mcp.read_stream_until_notification_message("thread/goal/updated"),
-        )
-        .await??;
-        let notification: ServerNotification = notification.try_into()?;
-        let ServerNotification::ThreadGoalUpdated(notification) = notification else {
-            anyhow::bail!("expected thread goal update notification");
-        };
-        assert_eq!(notification.goal.status, expected_status);
-    }
+    let notification = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("thread/goal/updated"),
+    )
+    .await??;
+    let notification: ServerNotification = notification.try_into()?;
+    let ServerNotification::ThreadGoalUpdated(notification) = notification else {
+        anyhow::bail!("expected thread goal update notification");
+    };
+    assert_eq!(notification.goal.status, ThreadGoalStatus::Blocked);
 
     Ok(())
 }

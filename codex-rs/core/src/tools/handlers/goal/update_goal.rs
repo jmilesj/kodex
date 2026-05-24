@@ -56,7 +56,7 @@ impl ToolExecutor<ToolInvocation> for UpdateGoalHandler {
             ThreadGoalStatus::Complete | ThreadGoalStatus::Blocked
         ) {
             return Err(FunctionCallError::RespondToModel(
-                "update_goal can only mark the existing goal complete or blocked; pause, resume, budget-limited, and usage-limited status changes are controlled by the user or system"
+                "update_goal can only mark the existing goal complete or blocked; pause, resume, and budget-limited status changes are controlled by the user or system"
                     .to_string(),
             ));
         }

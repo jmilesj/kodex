@@ -3478,7 +3478,6 @@ pub enum ThreadGoalStatus {
     Active,
     Paused,
     Blocked,
-    UsageLimited,
     BudgetLimited,
     Complete,
 }

@@ -324,14 +324,6 @@ WHERE thread_id = ?
             .await
     }
 
-    pub async fn usage_limit_active_thread_goal(
-        &self,
-        thread_id: ThreadId,
-    ) -> anyhow::Result<Option<crate::ThreadGoal>> {
-        self.update_active_thread_goal_status(thread_id, crate::ThreadGoalStatus::UsageLimited)
-            .await
-    }
-
     async fn update_active_thread_goal_status(
         &self,
         thread_id: ThreadId,
@@ -345,19 +337,12 @@ SET
     status = ?,
     updated_at_ms = ?
 WHERE thread_id = ?
-  AND (
-      status = 'active'
-      OR (
-          ? = 'usage_limited'
-          AND status = 'budget_limited'
-      )
-  )
+  AND status = 'active'
             "#,
         )
         .bind(status.as_str())
         .bind(now_ms)
         .bind(thread_id.to_string())
-        .bind(status.as_str())
         .execute(self.pool.as_ref())
         .await?;
 
@@ -406,7 +391,7 @@ WHERE thread_id = ?
                 "status IN ('active', 'budget_limited', 'complete')"
             }
             GoalAccountingMode::ActiveOrStopped => {
-                "status IN ('active', 'paused', 'blocked', 'usage_limited', 'budget_limited')"
+                "status IN ('active', 'paused', 'blocked', 'budget_limited')"
             }
         };
         let budget_limit_status_filter = match mode {
@@ -414,7 +399,7 @@ WHERE thread_id = ?
             | GoalAccountingMode::ActiveOnly
             | GoalAccountingMode::ActiveOrComplete => "status = 'active'",
             GoalAccountingMode::ActiveOrStopped => {
-                "status IN ('active', 'paused', 'blocked', 'usage_limited', 'budget_limited')"
+                "status IN ('active', 'paused', 'blocked', 'budget_limited')"
             }
         };
         let goal_id_filter = if expected_goal_id.is_some() {
@@ -978,66 +963,6 @@ mod tests {
                 .await
                 .expect("goal read should succeed")
         );
-    }
-
-    #[tokio::test]
-    async fn usage_limit_active_thread_goal_updates_active_or_budget_limited_goals() {
-        let runtime = test_runtime().await;
-        let thread_id = test_thread_id();
-        upsert_test_thread(&runtime, thread_id).await;
-        let goal = runtime
-            .thread_goals()
-            .replace_thread_goal(
-                thread_id,
-                "optimize the benchmark",
-                crate::ThreadGoalStatus::Active,
-                /*token_budget*/ None,
-            )
-            .await
-            .expect("goal replacement should succeed");
-
-        let usage_limited = runtime
-            .thread_goals()
-            .usage_limit_active_thread_goal(thread_id)
-            .await
-            .expect("usage limiting should succeed")
-            .expect("active goal should become usage limited");
-        let expected = crate::ThreadGoal {
-            status: crate::ThreadGoalStatus::UsageLimited,
-            updated_at: usage_limited.updated_at,
-            ..goal
-        };
-        assert_eq!(expected, usage_limited);
-
-        let second_update = runtime
-            .thread_goals()
-            .usage_limit_active_thread_goal(thread_id)
-            .await
-            .expect("repeated usage limiting should succeed");
-        assert_eq!(None, second_update);
-
-        let budget_limited = runtime
-            .thread_goals()
-            .replace_thread_goal(
-                thread_id,
-                "keep the usage failure visible",
-                crate::ThreadGoalStatus::BudgetLimited,
-                /*token_budget*/ Some(1),
-            )
-            .await
-            .expect("goal replacement should succeed");
-        let usage_limited = runtime
-            .thread_goals()
-            .usage_limit_active_thread_goal(thread_id)
-            .await
-            .expect("usage limiting should succeed")
-            .expect("budget-limited goal should become usage limited");
-        let expected = crate::ThreadGoal {
-            status: crate::ThreadGoalStatus::UsageLimited,
-            updated_at: usage_limited.updated_at,
-            ..budget_limited
-        };
-        assert_eq!(expected, usage_limited);
     }
 
     #[tokio::test]

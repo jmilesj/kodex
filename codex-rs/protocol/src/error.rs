@@ -189,16 +189,16 @@ impl CodexErr {
             | CodexErr::ThreadNotFound(_)
             | CodexErr::AgentLimitReached { .. }
             | CodexErr::Spawn
-            | CodexErr::SessionConfiguredNotFirstEvent
-            | CodexErr::UsageLimitReached(_)
-            | CodexErr::ServerOverloaded
-            | CodexErr::CyberPolicy { .. } => false,
+            | CodexErr::SessionConfiguredNotFirstEvent => false,
             CodexErr::Stream(..)
             | CodexErr::Timeout
             | CodexErr::RequestTimeout
             | CodexErr::UnexpectedStatus(_)
             | CodexErr::ResponseStreamFailed(_)
             | CodexErr::ConnectionFailed(_)
+            | CodexErr::UsageLimitReached(_)
+            | CodexErr::ServerOverloaded
+            | CodexErr::CyberPolicy { .. }
             | CodexErr::InternalServerError
             | CodexErr::InternalAgentDied
             | CodexErr::Io(_)

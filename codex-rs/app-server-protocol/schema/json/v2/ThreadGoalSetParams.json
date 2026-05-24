@@ -6,7 +6,6 @@
         "active",
         "paused",
         "blocked",
-        "usageLimited",
         "budgetLimited",
         "complete"
       ],

@@ -58,11 +58,13 @@ use core_test_support::responses::ev_completed_with_tokens;
 use core_test_support::responses::ev_message_item_added;
 use core_test_support::responses::ev_output_text_delta;
 use core_test_support::responses::ev_response_created;
+use core_test_support::responses::mount_response_sequence;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::mount_sse_once_match;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::sse_failed;
+use core_test_support::responses::sse_response;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::test_codex;
@@ -74,7 +76,9 @@ use serde_json::json;
 use std::io::Write;
 use std::num::NonZeroU64;
 use std::sync::Arc;
+use std::time::Duration;
 use tempfile::TempDir;
+use tokio::time::timeout;
 use toml::toml;
 use uuid::Uuid;
 use wiremock::Mock;
@@ -2581,12 +2585,8 @@ async fn token_count_includes_rate_limits_snapshot() {
     wait_for_event(&codex, |msg| matches!(msg, EventMsg::TurnComplete(_))).await;
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn usage_limit_error_emits_rate_limit_event() -> anyhow::Result<()> {
-    skip_if_no_network!(Ok(()));
-    let server = MockServer::start().await;
-
-    let response = ResponseTemplate::new(429)
+fn usage_limit_http_response() -> ResponseTemplate {
+    ResponseTemplate::new(429)
         .insert_header("x-codex-primary-used-percent", "100.0")
         .insert_header("x-codex-secondary-used-percent", "87.5")
         .insert_header("x-codex-primary-over-secondary-limit-percent", "95.0")
@@ -2599,17 +2599,151 @@ async fn usage_limit_error_emits_rate_limit_event() -> anyhow::Result<()> {
                 "resets_at": 1704067242,
                 "plan_type": "pro"
             }
-        }));
+        }))
+}
+
+fn server_overloaded_http_response() -> ResponseTemplate {
+    ResponseTemplate::new(503).set_body_json(json!({
+        "error": {
+            "code": "server_is_overloaded",
+            "message": "model is at capacity"
+        }
+    }))
+}
+
+fn cyber_policy_http_response() -> ResponseTemplate {
+    ResponseTemplate::new(400).set_body_json(json!({
+        "error": {
+            "code": "cyber_policy",
+            "message": "temporary policy service failure"
+        }
+    }))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn usage_limit_error_retries_and_completes_when_next_attempt_succeeds() -> anyhow::Result<()>
+{
+    assert_transient_upstream_error_retries_and_completes(
+        usage_limit_http_response(),
+        /*expect_usage_limit_snapshot*/ true,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn server_overloaded_error_retries_and_completes_when_next_attempt_succeeds()
+-> anyhow::Result<()> {
+    assert_transient_upstream_error_retries_and_completes(
+        server_overloaded_http_response(),
+        /*expect_usage_limit_snapshot*/ false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cyber_policy_error_retries_and_completes_when_next_attempt_succeeds() -> anyhow::Result<()>
+{
+    assert_transient_upstream_error_retries_and_completes(
+        cyber_policy_http_response(),
+        /*expect_usage_limit_snapshot*/ false,
+    )
+    .await
+}
+
+async fn assert_transient_upstream_error_retries_and_completes(
+    first_response: ResponseTemplate,
+    expect_usage_limit_snapshot: bool,
+) -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    let server = MockServer::start().await;
+
+    let responses_mock = mount_response_sequence(
+        &server,
+        vec![
+            first_response,
+            sse_response(sse(vec![
+                ev_response_created("resp-retry-success"),
+                ev_assistant_message("msg-retry-success", "recovered"),
+                ev_completed("resp-retry-success"),
+            ])),
+        ],
+    )
+    .await;
+
+    let TestCodex { codex, .. } = test_codex()
+        .with_config(|config| {
+            config.model_provider.request_max_retries = Some(0);
+            config.model_provider.stream_max_retries = Some(1);
+        })
+        .build(&server)
+        .await?;
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "hello".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            thread_settings: Default::default(),
+        })
+        .await?;
+
+    let mut saw_usage_limit_snapshot = false;
+    loop {
+        let event = timeout(Duration::from_secs(10), codex.next_event()).await??.msg;
+        match event {
+            EventMsg::TokenCount(event) => {
+                saw_usage_limit_snapshot |= event
+                    .rate_limits
+                    .as_ref()
+                    .and_then(|limits| limits.primary.as_ref())
+                    .map(|primary| primary.used_percent)
+                    == Some(100.0);
+            }
+            EventMsg::Error(error) => {
+                panic!(
+                    "transient upstream error should be retried: {}",
+                    error.message
+                );
+            }
+            EventMsg::TurnComplete(_) => break,
+            _ => {}
+        }
+    }
+
+    if expect_usage_limit_snapshot {
+        assert!(
+            saw_usage_limit_snapshot,
+            "retry should retain the rate limit snapshot from the failed attempt"
+        );
+    }
+    assert_eq!(responses_mock.requests().len(), 2);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn usage_limit_error_emits_rate_limit_event() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    let server = MockServer::start().await;
 
     Mock::given(method("POST"))
         .and(path("/v1/responses"))
-        .respond_with(response)
+        .respond_with(usage_limit_http_response())
         .expect(1)
         .mount(&server)
         .await;
 
-    let mut builder = test_codex();
-    let codex_fixture = builder.build(&server).await?;
+    let codex_fixture = test_codex()
+        .with_config(|config| {
+            config.model_provider.request_max_retries = Some(0);
+            config.model_provider.stream_max_retries = Some(0);
+        })
+        .build(&server)
+        .await?;
     let codex = codex_fixture.codex.clone();
 
     let expected_limits = json!({
