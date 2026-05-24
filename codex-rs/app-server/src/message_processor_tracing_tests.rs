@@ -265,6 +265,7 @@ async fn build_test_processor(
         auth_manager,
         installation_id: "11111111-1111-4111-8111-111111111111".to_string(),
         rpc_transport: AppServerRpcTransport::Stdio,
+        remote_control_handle: None,
         plugin_startup_tasks: crate::PluginStartupTasks::Start,
     }));
     (processor, outgoing_rx)
@@ -658,6 +659,7 @@ async fn turn_start_jsonrpc_span_parents_core_turn_spans() -> Result<()> {
                     }],
                     responsesapi_client_metadata: None,
                     cwd: None,
+                    runtime_workspace_roots: None,
                     approval_policy: None,
                     sandbox_policy: None,
                     permissions: None,
