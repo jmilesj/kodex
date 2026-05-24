@@ -8,7 +8,7 @@
 | Git (optional, recommended) | 2.23+ for built-in PR helpers                                   |
 | RAM                         | 4-GB minimum (8-GB recommended)                                 |
 
-### DotSlash
+### GitHub Releases
 
 The GitHub Release also contains the macOS and Linux release installer plus
 platform-specific binary archives for the Kodex CLI named `kodex`.
