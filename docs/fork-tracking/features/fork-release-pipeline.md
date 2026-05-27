@@ -4,7 +4,7 @@
 
 This fork publishes its own binary release artifacts, installs them through a stable bootstrap script, and displays a fork-specific release version without rewriting the workspace manifest during CI.
 
-The release pipeline also keeps Linux and macOS release targets aligned with the fork's supported binaries and uses cache reuse to keep repeated release builds from recompiling the whole workspace.
+The release pipeline also keeps Linux and macOS release targets aligned with the fork's supported binaries and uses cache reuse to keep repeated release builds from recompiling the whole workspace. Linux release binaries use musl targets built through `cargo-zigbuild` so the published artifacts do not inherit the GitHub runner's glibc floor.
 
 ## Upstream Anchor
 
@@ -47,10 +47,10 @@ KODEX_CLI_VERSION=0.133.0.1779638524 just test -p codex-cli version_uses_kodex_c
 
 Manual checks:
 
-- The release workflow publishes `kodex` binaries for `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and `aarch64-unknown-linux-gnu`.
+- The release workflow publishes `kodex` binaries for `aarch64-apple-darwin`, `x86_64-unknown-linux-musl`, and `aarch64-unknown-linux-musl`.
 - The workflow passes `KODEX_CLI_VERSION` instead of rewriting `Cargo.toml`.
 - `kodex --version` reports the fork release version, not the workspace package version.
-- `scripts/install/install.sh` resolves the latest fork release from GitHub, skips reinstall when the local version is current, and configures `PATH`.
+- `scripts/install/install.sh` resolves the latest fork release from GitHub, selects musl Linux release assets, skips reinstall when the local version is current, and configures `PATH`.
 - The README points users at the stable installer URL and the fork release binaries.
 
 ## Recent Fork Commits
