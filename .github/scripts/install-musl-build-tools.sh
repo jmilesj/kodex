@@ -90,8 +90,14 @@ EOF
 fi
 
 sysroot=""
+zig_bin=""
 if command -v zig >/dev/null; then
   zig_bin="$(command -v zig)"
+elif command -v python-zig >/dev/null; then
+  zig_bin="$(command -v python-zig)"
+fi
+
+if [[ -n "${zig_bin}" ]]; then
   cc="${tool_root}/zigcc"
   cxx="${tool_root}/zigcxx"
 
