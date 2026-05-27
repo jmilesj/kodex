@@ -44,6 +44,20 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertNotIn("Stamp release version into Cargo.toml", workflow)
         self.assertNotIn("path = Path(\"Cargo.toml\")", workflow)
 
+    def test_build_installs_release_target_for_active_toolchain(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("name: Install Rust target for active toolchain", workflow)
+        self.assertIn('rustup target add "$TARGET"', workflow)
+        self.assertLess(
+            workflow.index("name: Install Rust toolchain"),
+            workflow.index("name: Install Rust target for active toolchain"),
+        )
+        self.assertLess(
+            workflow.index("name: Install Rust target for active toolchain"),
+            workflow.index("name: Build release binary"),
+        )
+
     def test_linux_release_targets_use_musl(self) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
