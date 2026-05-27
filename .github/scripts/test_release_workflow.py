@@ -60,6 +60,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("ziglang==0.16.0", workflow)
         self.assertNotIn("install-musl-build-tools.sh", workflow)
         self.assertIn("multiarch=\"$(gcc -dumpmachine)\"", workflow)
+        self.assertIn("cflags=\"-isystem /usr/include -isystem /usr/include/${multiarch}\"", workflow)
         self.assertIn("CFLAGS=\"$cflags\" RUSTFLAGS=\"$rustflags\"", workflow)
         self.assertIn("cargo zigbuild --release -p codex-cli --bin kodex --target \"$BUILD_TARGET\"", workflow)
 
