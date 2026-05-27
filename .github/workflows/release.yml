@@ -111,7 +111,20 @@ jobs:
             cargo_linker_var="CARGO_TARGET_${TARGET^^}_LINKER"
             cargo_linker_var="${cargo_linker_var//-/_}"
             unset "$cargo_linker_var"
-            CARGO_ZIGBUILD_ZIG_PATH=python-zig cargo zigbuild --release --timings -p codex-cli --bin kodex --target "$TARGET"
+            env \
+              -u CC \
+              -u CXX \
+              -u CFLAGS \
+              -u CXXFLAGS \
+              -u TARGET_CC \
+              -u TARGET_CXX \
+              -u CMAKE_C_COMPILER \
+              -u CMAKE_CXX_COMPILER \
+              -u PKG_CONFIG_ALLOW_CROSS \
+              -u PKG_CONFIG_PATH \
+              -u PKG_CONFIG_SYSROOT_DIR \
+              CARGO_ZIGBUILD_ZIG_PATH=python-zig \
+              cargo zigbuild --release --timings -p codex-cli --bin kodex --target "$TARGET"
           else
             cargo build --release --timings -p codex-cli --bin kodex --target "$TARGET"
           fi

@@ -246,7 +246,13 @@ if [[ "${TARGET}" == "aarch64-unknown-linux-musl" ]]; then
 fi
 
 echo "CFLAGS=${cflags}" >> "$GITHUB_ENV"
+target_cflags_var="CFLAGS_${TARGET}"
+target_cflags_var="${target_cflags_var//-/_}"
+echo "${target_cflags_var}=${cflags}" >> "$GITHUB_ENV"
 echo "CXXFLAGS=${cxxflags}" >> "$GITHUB_ENV"
+target_cxxflags_var="CXXFLAGS_${TARGET}"
+target_cxxflags_var="${target_cxxflags_var//-/_}"
+echo "${target_cxxflags_var}=${cxxflags}" >> "$GITHUB_ENV"
 echo "CC=${cc}" >> "$GITHUB_ENV"
 echo "TARGET_CC=${cc}" >> "$GITHUB_ENV"
 target_cc_var="CC_${TARGET}"
@@ -268,6 +274,9 @@ echo "CMAKE_ARGS=-DCMAKE_HAVE_THREADS_LIBRARY=1 -DCMAKE_USE_PTHREADS_INIT=1 -DCM
 
 # Allow pkg-config resolution during cross-compilation.
 echo "PKG_CONFIG_ALLOW_CROSS=1" >> "$GITHUB_ENV"
+pkg_config_allow_cross_var="PKG_CONFIG_ALLOW_CROSS_${TARGET}"
+pkg_config_allow_cross_var="${pkg_config_allow_cross_var//-/_}"
+echo "${pkg_config_allow_cross_var}=1" >> "$GITHUB_ENV"
 pkg_config_path="${libcap_pkgconfig_dir}"
 if [[ -n "${PKG_CONFIG_PATH:-}" ]]; then
   pkg_config_path="${pkg_config_path}:${PKG_CONFIG_PATH}"
