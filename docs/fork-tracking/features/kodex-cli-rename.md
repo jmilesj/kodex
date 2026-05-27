@@ -84,7 +84,7 @@ Manual checks:
 
 ## Last Verified
 
-Pending review after upstream merge `d1d1df1dd7`.
+Partial review after upstream merge `090144e0ec`; telemetry/updater scoped tests are still pending.
 
 ## Retirement Condition
 

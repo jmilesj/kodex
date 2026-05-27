@@ -89,7 +89,7 @@ Manual checks:
 
 ## Last Verified
 
-2026-05-25
+Upstream merge `090144e0ec`.
 
 ## Retirement Condition
 

@@ -2,7 +2,8 @@
 
 set -eu
 
-RELEASE="latest"
+RELEASE="${CODEX_RELEASE:-latest}"
+NON_INTERACTIVE="${CODEX_NON_INTERACTIVE:-false}"
 REPO_SLUG="jmilesj/kodex"
 
 BIN_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
@@ -60,6 +61,19 @@ normalize_version() {
   printf '%s\n' "$version"
 }
 
+validate_version() {
+  version="$1"
+
+  if [ "$version" = "latest" ]; then
+    return
+  fi
+
+  if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?(-(alpha|beta)(\.[0-9]+)?)?$'; then
+    echo "Invalid Kodex release version: $version. Expected latest or x.y.z[.build][-alpha[.N]|-beta[.N]]." >&2
+    exit 1
+  fi
+}
+
 parse_args() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -74,6 +88,10 @@ parse_args() {
       --help | -h)
         cat <<EOF
 Usage: install.sh [--release VERSION]
+
+Environment:
+  CODEX_RELEASE          Version to install; overridden by --release.
+  CODEX_NON_INTERACTIVE  Set to 1, true, or yes to skip prompts.
 EOF
         exit 0
         ;;
@@ -248,6 +266,7 @@ require_command() {
 
 resolve_version() {
   normalized_version="$(normalize_version "$RELEASE")"
+  validate_version "$normalized_version"
 
   if [ "$normalized_version" != "latest" ]; then
     printf '%s\n' "$normalized_version"
@@ -263,6 +282,7 @@ resolve_version() {
     exit 1
   fi
 
+  validate_version "$resolved"
   printf '%s\n' "$resolved"
 }
 
@@ -294,7 +314,9 @@ add_to_path() {
 
   case ":$PATH:" in
     *":$BIN_DIR:"*)
-      return
+      if [ -z "$conflict_manager" ]; then
+        return
+      fi
       ;;
   esac
 
@@ -584,6 +606,12 @@ classify_existing_codex() {
 
 prompt_yes_no() {
   prompt="$1"
+
+  case "$NON_INTERACTIVE" in
+    1 | [Tt][Rr][Uu][Ee] | [Yy][Ee][Ss])
+      return 1
+      ;;
+  esac
 
   if ( : </dev/tty ) 2>/dev/null; then
     printf '%s [y/N] ' "$prompt" >/dev/tty

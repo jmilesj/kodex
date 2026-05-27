@@ -85,7 +85,7 @@ Manual checks:
 
 ## Last Verified
 
-Pending review after upstream merge `d1d1df1dd7`.
+Pending review after upstream merge `090144e0ec`.
 
 ## Retirement Condition
 
