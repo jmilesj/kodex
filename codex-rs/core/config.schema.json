@@ -2389,9 +2389,6 @@
     "RealtimeToml": {
       "additionalProperties": false,
       "properties": {
-        "transport": {
-          "$ref": "#/definitions/RealtimeTransport"
-        },
         "type": {
           "$ref": "#/definitions/RealtimeWsMode"
         },
@@ -2403,13 +2400,6 @@
         }
       },
       "type": "object"
-    },
-    "RealtimeTransport": {
-      "enum": [
-        "webrtc",
-        "websocket"
-      ],
-      "type": "string"
     },
     "RealtimeVoice": {
       "enum": [

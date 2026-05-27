@@ -46,8 +46,6 @@ use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::config_types::Personality;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort;
-use codex_realtime_webrtc::RealtimeWebrtcEvent;
-use codex_realtime_webrtc::RealtimeWebrtcSessionHandle;
 
 use crate::history_cell::HistoryCell;
 
@@ -655,17 +653,6 @@ pub(crate) enum AppEvent {
         kind: RealtimeAudioDeviceKind,
     },
 
-    /// Result of creating a TUI-owned realtime WebRTC offer.
-    RealtimeWebrtcOfferCreated {
-        result: Result<RealtimeWebrtcOffer, String>,
-    },
-
-    /// Peer-connection lifecycle event from a TUI-owned realtime WebRTC session.
-    RealtimeWebrtcEvent(RealtimeWebrtcEvent),
-
-    /// Local microphone level from a TUI-owned realtime WebRTC session.
-    RealtimeWebrtcLocalAudioLevel(u16),
-
     /// Open the reasoning selection popup after picking a model.
     OpenReasoningPopup {
         model: ModelPreset,
@@ -1012,12 +999,6 @@ pub(crate) struct PermissionProfileSelection {
     pub approval_policy: Option<AskForApproval>,
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub display_label: String,
-}
-
-#[derive(Debug)]
-pub(crate) struct RealtimeWebrtcOffer {
-    pub(crate) offer_sdp: String,
-    pub(crate) handle: RealtimeWebrtcSessionHandle,
 }
 
 /// The exit strategy requested by the UI layer.

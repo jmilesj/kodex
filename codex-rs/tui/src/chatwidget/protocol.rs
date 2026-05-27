@@ -210,11 +210,7 @@ impl ChatWidget {
                     self.on_realtime_conversation_closed(notification);
                 }
             }
-            ServerNotification::ThreadRealtimeSdp(notification) => {
-                if !from_replay {
-                    self.on_realtime_conversation_sdp(notification.sdp);
-                }
-            }
+            ServerNotification::ThreadRealtimeSdp(_) => {}
             ServerNotification::ServerRequestResolved(_)
             | ServerNotification::AccountUpdated(_)
             | ServerNotification::AccountRateLimitsUpdated(_)
