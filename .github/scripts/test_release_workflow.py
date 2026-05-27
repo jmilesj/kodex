@@ -56,7 +56,8 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
         self.assertIn("cargo-zigbuild==0.22.3", workflow)
         self.assertIn("ziglang==0.16.0", workflow)
-        self.assertIn("../.github/scripts/install-musl-build-tools.sh", workflow)
+        self.assertIn("bash ../.github/scripts/install-musl-build-tools.sh", workflow)
+        self.assertNotIn("run: ../.github/scripts/install-musl-build-tools.sh", workflow)
         self.assertIn("cargo zigbuild --release -p codex-cli --bin kodex --target \"$TARGET\"", workflow)
 
 

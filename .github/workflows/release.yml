@@ -93,7 +93,7 @@ jobs:
 
       - name: Prepare musl build tools
         if: runner.os == 'Linux'
-        run: ../.github/scripts/install-musl-build-tools.sh
+        run: bash ../.github/scripts/install-musl-build-tools.sh
 
       - name: Build release binary
         run: |
