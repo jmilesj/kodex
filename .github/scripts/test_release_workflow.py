@@ -40,6 +40,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
         self.assertIn("KODEX_CLI_VERSION: ${{ needs.metadata.outputs.version }}", workflow)
         self.assertIn('CARGO_PROFILE_RELEASE_LTO: "false"', workflow)
+        self.assertIn('CARGO_PROFILE_RELEASE_OPT_LEVEL: "2"', workflow)
         self.assertNotIn("Stamp release version into Cargo.toml", workflow)
         self.assertNotIn("path = Path(\"Cargo.toml\")", workflow)
 
@@ -62,7 +63,16 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("multiarch=\"$(gcc -dumpmachine)\"", workflow)
         self.assertIn("cflags=\"-isystem /usr/include -isystem /usr/include/${multiarch}\"", workflow)
         self.assertIn("CFLAGS=\"$cflags\" RUSTFLAGS=\"$rustflags\"", workflow)
-        self.assertIn("cargo zigbuild --release -p codex-cli --bin kodex --target \"$BUILD_TARGET\"", workflow)
+        self.assertIn("cargo zigbuild --release --timings -p codex-cli --bin kodex --target \"$BUILD_TARGET\"", workflow)
+        self.assertIn("cargo build --release --timings -p codex-cli --bin kodex --target \"$TARGET\"", workflow)
+
+    def test_release_workflow_uploads_cargo_timings(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("name: Upload cargo timings", workflow)
+        self.assertIn("if: always()", workflow)
+        self.assertIn("name: cargo-timings-${{ matrix.target }}", workflow)
+        self.assertIn("path: codex-rs/target/cargo-timings", workflow)
 
 
 if __name__ == "__main__":

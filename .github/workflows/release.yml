@@ -17,6 +17,7 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
   CARGO_PROFILE_RELEASE_LTO: "false"
+  CARGO_PROFILE_RELEASE_OPT_LEVEL: "2"
 
 jobs:
   metadata:
@@ -108,10 +109,18 @@ jobs:
             if [[ -n "${RUSTFLAGS:-}" ]]; then
               rustflags="${RUSTFLAGS} ${rustflags}"
             fi
-            CARGO_ZIGBUILD_ZIG_PATH=python-zig CFLAGS="$cflags" RUSTFLAGS="$rustflags" cargo zigbuild --release -p codex-cli --bin kodex --target "$BUILD_TARGET"
+            CARGO_ZIGBUILD_ZIG_PATH=python-zig CFLAGS="$cflags" RUSTFLAGS="$rustflags" cargo zigbuild --release --timings -p codex-cli --bin kodex --target "$BUILD_TARGET"
           else
-            cargo build --release -p codex-cli --bin kodex --target "$TARGET"
+            cargo build --release --timings -p codex-cli --bin kodex --target "$TARGET"
           fi
+
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: cargo-timings-${{ matrix.target }}
+          path: codex-rs/target/cargo-timings
+          if-no-files-found: ignore
 
       - name: Package release archive
         id: package

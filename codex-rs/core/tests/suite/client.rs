@@ -2693,7 +2693,9 @@ async fn assert_transient_upstream_error_retries_and_completes(
 
     let mut saw_usage_limit_snapshot = false;
     loop {
-        let event = timeout(Duration::from_secs(10), codex.next_event()).await??.msg;
+        let event = timeout(Duration::from_secs(10), codex.next_event())
+            .await??
+            .msg;
         match event {
             EventMsg::TokenCount(event) => {
                 saw_usage_limit_snapshot |= event

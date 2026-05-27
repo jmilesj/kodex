@@ -22,6 +22,7 @@ Primary upstream areas to inspect after merges:
 
 - `.github/workflows/release.yml`
 - `.github/scripts/kodex_release_version.py`
+- `.github/scripts/test_cli_manifest.py`
 - `.github/scripts/test_release_workflow.py`
 - `.github/scripts/test_install_sh.py`
 - `.github/scripts/test_kodex_release_version.py`
@@ -35,10 +36,11 @@ Primary upstream areas to inspect after merges:
 Run these to check the fork release pipeline and installer behavior:
 
 ```bash
+python3 .github/scripts/test_cli_manifest.py
 python3 .github/scripts/test_release_workflow.py
 python3 .github/scripts/test_install_sh.py
 python3 .github/scripts/test_kodex_release_version.py
-python3 -m py_compile .github/scripts/kodex_release_version.py .github/scripts/test_release_workflow.py .github/scripts/test_install_sh.py .github/scripts/test_kodex_release_version.py
+python3 -m py_compile .github/scripts/kodex_release_version.py .github/scripts/test_cli_manifest.py .github/scripts/test_release_workflow.py .github/scripts/test_install_sh.py .github/scripts/test_kodex_release_version.py
 bash -n scripts/install/install.sh
 ruby -e 'require "yaml"; YAML.load_file(".github/workflows/release.yml"); puts "ok"'
 cd codex-rs
@@ -48,8 +50,10 @@ KODEX_CLI_VERSION=0.133.0.1779638524 just test -p codex-cli version_uses_kodex_c
 Manual checks:
 
 - The release workflow publishes `kodex` binaries for `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and `aarch64-unknown-linux-gnu`.
+- Linux release workflow builds with `cargo-zigbuild`, a glibc 2.17 target suffix, release `opt-level=2`, and cargo timing artifact upload.
 - The workflow passes `KODEX_CLI_VERSION` instead of rewriting `Cargo.toml`.
 - `kodex --version` reports the fork release version, not the workspace package version.
+- The release `codex-cli` build does not depend on `codex-app-server-test-client`.
 - `scripts/install/install.sh` resolves the latest fork release from GitHub, selects GNU Linux release assets, skips reinstall when the local version is current, and configures `PATH`.
 - The README points users at the stable installer URL and the fork release binaries.
 
