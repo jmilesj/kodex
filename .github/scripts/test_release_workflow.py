@@ -43,22 +43,25 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertNotIn("Stamp release version into Cargo.toml", workflow)
         self.assertNotIn("path = Path(\"Cargo.toml\")", workflow)
 
-    def test_linux_release_targets_use_musl(self) -> None:
+    def test_linux_release_targets_use_gnu_with_zigbuild_glibc_floor(self) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
-        self.assertIn("target: x86_64-unknown-linux-musl", workflow)
-        self.assertIn("target: aarch64-unknown-linux-musl", workflow)
-        self.assertNotIn("target: x86_64-unknown-linux-gnu", workflow)
-        self.assertNotIn("target: aarch64-unknown-linux-gnu", workflow)
+        self.assertIn("target: x86_64-unknown-linux-gnu", workflow)
+        self.assertIn("build_target: x86_64-unknown-linux-gnu.2.17", workflow)
+        self.assertIn("target: aarch64-unknown-linux-gnu", workflow)
+        self.assertIn("build_target: aarch64-unknown-linux-gnu.2.17", workflow)
+        self.assertNotIn("target: x86_64-unknown-linux-musl", workflow)
+        self.assertNotIn("target: aarch64-unknown-linux-musl", workflow)
 
     def test_linux_release_build_uses_cargo_zigbuild(self) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("cargo-zigbuild==0.22.3", workflow)
         self.assertIn("ziglang==0.16.0", workflow)
-        self.assertIn("bash ../.github/scripts/install-musl-build-tools.sh", workflow)
-        self.assertNotIn("run: ../.github/scripts/install-musl-build-tools.sh", workflow)
-        self.assertIn("cargo zigbuild --release -p codex-cli --bin kodex --target \"$TARGET\"", workflow)
+        self.assertNotIn("install-musl-build-tools.sh", workflow)
+        self.assertIn("multiarch=\"$(gcc -dumpmachine)\"", workflow)
+        self.assertIn("CFLAGS=\"$cflags\" RUSTFLAGS=\"$rustflags\"", workflow)
+        self.assertIn("cargo zigbuild --release -p codex-cli --bin kodex --target \"$BUILD_TARGET\"", workflow)
 
 
 if __name__ == "__main__":

@@ -54,12 +54,16 @@ jobs:
         include:
           - runner: macos-15
             target: aarch64-apple-darwin
+            build_target: aarch64-apple-darwin
           - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
+            target: x86_64-unknown-linux-gnu
+            build_target: x86_64-unknown-linux-gnu.2.17
           - runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
+            target: aarch64-unknown-linux-gnu
+            build_target: aarch64-unknown-linux-gnu.2.17
     env:
       TARGET: ${{ matrix.target }}
+      BUILD_TARGET: ${{ matrix.build_target }}
       KODEX_CLI_VERSION: ${{ needs.metadata.outputs.version }}
     defaults:
       run:
@@ -91,18 +95,20 @@ jobs:
           python3 -m pip install --user cargo-zigbuild==0.22.3 ziglang==0.16.0
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Prepare musl build tools
-        if: runner.os == 'Linux'
-        run: bash ../.github/scripts/install-musl-build-tools.sh
-
       - name: Build release binary
         run: |
           set -euo pipefail
-          if [[ "$TARGET" == *-unknown-linux-musl ]]; then
-            cargo_linker_var="CARGO_TARGET_${TARGET^^}_LINKER"
-            cargo_linker_var="${cargo_linker_var//-/_}"
-            unset "$cargo_linker_var"
-            CARGO_ZIGBUILD_ZIG_PATH=python-zig cargo zigbuild --release -p codex-cli --bin kodex --target "$TARGET"
+          if [[ "$TARGET" == *-unknown-linux-gnu ]]; then
+            multiarch="$(gcc -dumpmachine)"
+            cflags="-isystem /usr/include"
+            rustflags="-L /usr/lib/${multiarch}"
+            if [[ -n "${CFLAGS:-}" ]]; then
+              cflags="${CFLAGS} ${cflags}"
+            fi
+            if [[ -n "${RUSTFLAGS:-}" ]]; then
+              rustflags="${RUSTFLAGS} ${rustflags}"
+            fi
+            CARGO_ZIGBUILD_ZIG_PATH=python-zig CFLAGS="$cflags" RUSTFLAGS="$rustflags" cargo zigbuild --release -p codex-cli --bin kodex --target "$BUILD_TARGET"
           else
             cargo build --release -p codex-cli --bin kodex --target "$TARGET"
           fi

@@ -15,13 +15,13 @@ INSTALL_SH = ROOT / "scripts" / "install" / "install.sh"
 
 
 class InstallShTest(unittest.TestCase):
-    def test_linux_targets_use_musl_release_artifacts(self) -> None:
+    def test_linux_targets_use_gnu_release_artifacts(self) -> None:
         installer = INSTALL_SH.read_text(encoding="utf-8")
 
-        self.assertIn('vendor_target="aarch64-unknown-linux-musl"', installer)
-        self.assertIn('vendor_target="x86_64-unknown-linux-musl"', installer)
-        self.assertNotIn('vendor_target="aarch64-unknown-linux-gnu"', installer)
-        self.assertNotIn('vendor_target="x86_64-unknown-linux-gnu"', installer)
+        self.assertIn('vendor_target="aarch64-unknown-linux-gnu"', installer)
+        self.assertIn('vendor_target="x86_64-unknown-linux-gnu"', installer)
+        self.assertNotIn('vendor_target="aarch64-unknown-linux-musl"', installer)
+        self.assertNotIn('vendor_target="x86_64-unknown-linux-musl"', installer)
 
     def test_up_to_date_local_install_skips_asset_download(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
