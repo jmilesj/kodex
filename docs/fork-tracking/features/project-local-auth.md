@@ -18,7 +18,6 @@ Primary upstream areas to inspect after merges:
 - `codex-rs/exec/src/lib.rs`
 - `codex-rs/tui/src/lib.rs`
 - `codex-rs/cloud-requirements/src/lib.rs`
-- `codex-rs/cloud-tasks/src/util.rs`
 
 ## Local Implementation Paths
 
@@ -34,7 +33,6 @@ Primary upstream areas to inspect after merges:
 - `codex-rs/tui/src/lib.rs`
 - `codex-rs/tui/src/onboarding/auth.rs`
 - `codex-rs/cloud-requirements/src/lib.rs`
-- `codex-rs/cloud-tasks/src/util.rs`
 
 ## Verification Steps
 
@@ -47,14 +45,13 @@ just test -p codex-login
 just test -p codex-cli
 ```
 
-When TUI, exec, cloud requirements, or cloud task auth wiring changed upstream, also run the matching scoped tests:
+When TUI, exec, or cloud requirements auth wiring changed upstream, also run the matching scoped tests:
 
 ```bash
 cd codex-rs
 just test -p codex-tui
 just test -p codex-exec
 just test -p codex-cloud-requirements
-just test -p codex-cloud-tasks
 ```
 
 Targeted tests to look for in the output:

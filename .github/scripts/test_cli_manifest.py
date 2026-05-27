@@ -35,6 +35,28 @@ class CliManifestTest(unittest.TestCase):
         self.assertNotIn("webrtc-sys", locked_packages)
         self.assertNotIn("webrtc-sys-build", locked_packages)
 
+    def test_release_cli_does_not_depend_on_cloud_tasks(self) -> None:
+        manifest = tomllib.loads(CLI_CARGO_TOML.read_text(encoding="utf-8"))
+        dependencies = manifest["dependencies"]
+        main_rs = CLI_MAIN_RS.read_text(encoding="utf-8")
+        lockfile = tomllib.loads(CODEX_CARGO_LOCK.read_text(encoding="utf-8"))
+        locked_packages = {package["name"] for package in lockfile["package"]}
+        cli_locked_dependencies = next(
+            package["dependencies"]
+            for package in lockfile["package"]
+            if package["name"] == "codex-cli"
+        )
+
+        self.assertNotIn("codex-cloud-tasks", dependencies)
+        self.assertNotIn("codex_cloud_tasks", main_rs)
+        self.assertNotIn("codex-chatgpt", dependencies)
+        self.assertNotIn("codex-chatgpt", cli_locked_dependencies)
+        self.assertNotIn("Apply(ApplyCommand)", main_rs)
+        self.assertNotIn("run_apply_command", main_rs)
+        self.assertNotIn("codex-cloud-tasks", locked_packages)
+        self.assertNotIn("codex-cloud-tasks-client", locked_packages)
+        self.assertNotIn("codex-cloud-tasks-mock-client", locked_packages)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2163,21 +2163,15 @@ name = "codex-chatgpt"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "clap",
  "codex-app-server-protocol",
  "codex-connectors",
  "codex-core",
  "codex-core-plugins",
- "codex-git-utils",
  "codex-login",
  "codex-model-provider",
  "codex-plugin",
- "codex-utils-cargo-bin",
- "codex-utils-cli",
  "pretty_assertions",
  "serde",
- "serde_json",
- "tempfile",
  "tokio",
 ]
 
@@ -2195,8 +2189,6 @@ dependencies = [
  "codex-app-server-daemon",
  "codex-app-server-protocol",
  "codex-arg0",
- "codex-chatgpt",
- "codex-cloud-tasks",
  "codex-config",
  "codex-core",
  "codex-core-plugins",
@@ -2300,63 +2292,6 @@ dependencies = [
  "tokio",
  "toml 0.9.11+spec-1.1.0",
  "tracing",
-]
-
-[[package]]
-name = "codex-cloud-tasks"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "clap",
- "codex-client",
- "codex-cloud-tasks-client",
- "codex-cloud-tasks-mock-client",
- "codex-core",
- "codex-git-utils",
- "codex-login",
- "codex-model-provider",
- "codex-tui",
- "codex-utils-cli",
- "crossterm",
- "owo-colors",
- "pretty_assertions",
- "ratatui",
- "reqwest",
- "serde",
- "serde_json",
- "supports-color 3.0.2",
- "tokio",
- "tokio-stream",
- "tracing",
- "tracing-subscriber",
- "unicode-width 0.2.1",
-]
-
-[[package]]
-name = "codex-cloud-tasks-client"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "codex-api",
- "codex-backend-client",
- "codex-git-utils",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "codex-cloud-tasks-mock-client"
-version = "0.0.0"
-dependencies = [
- "async-trait",
- "chrono",
- "codex-cloud-tasks-client",
- "diffy",
 ]
 
 [[package]]
