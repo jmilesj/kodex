@@ -8,6 +8,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
+SETUP_RUSTY_V8_ACTION = (
+    ROOT / ".github" / "actions" / "setup-rusty-v8" / "action.yml"
+)
 
 
 class ReleaseWorkflowTest(unittest.TestCase):
@@ -100,6 +103,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("if: always()", workflow)
         self.assertIn("name: cargo-timings-${{ matrix.target }}", workflow)
         self.assertIn("path: codex-rs/target/cargo-timings", workflow)
+
+    def test_rusty_v8_artifact_paths_force_build_script_rerun(self) -> None:
+        action = SETUP_RUSTY_V8_ACTION.read_text(encoding="utf-8")
+
+        self.assertIn('run_key="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"', action)
+        self.assertIn('binding_dir="${RUNNER_TEMP}/rusty_v8/${run_key}/${TARGET}"', action)
+        self.assertNotIn('binding_dir="${RUNNER_TEMP}/rusty_v8"', action)
 
 
 if __name__ == "__main__":

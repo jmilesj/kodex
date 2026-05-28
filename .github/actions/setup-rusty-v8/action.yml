@@ -18,7 +18,11 @@ runs:
         version="$(python3 "${GITHUB_WORKSPACE}/.github/scripts/rusty_v8_bazel.py" resolved-v8-crate-version)"
         release_tag="rusty-v8-v${version}"
         base_url="https://github.com/openai/codex/releases/download/${release_tag}"
-        binding_dir="${RUNNER_TEMP}/rusty_v8"
+        # Keep the override paths run-specific. The v8 build script copies this
+        # archive into target/.../gn_out/obj, which target caching may not
+        # restore even when Cargo fingerprints say v8 is fresh.
+        run_key="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"
+        binding_dir="${RUNNER_TEMP}/rusty_v8/${run_key}/${TARGET}"
         archive_path="${binding_dir}/librusty_v8_release_${TARGET}.a.gz"
         binding_path="${binding_dir}/src_binding_release_${TARGET}.rs"
         checksums_path="${binding_dir}/rusty_v8_release_${TARGET}.sha256"
