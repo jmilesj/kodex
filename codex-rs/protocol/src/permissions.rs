@@ -37,11 +37,6 @@ pub fn is_protected_metadata_name(name: &OsStr) -> bool {
         .any(|metadata_name| name == OsStr::new(metadata_name))
 }
 
-pub fn is_protected_metadata_directory_name(name: &OsStr) -> bool {
-    name == OsStr::new(PROTECTED_METADATA_AGENTS_PATH_NAME)
-        || name == OsStr::new(PROTECTED_METADATA_CODEX_PATH_NAME)
-}
-
 /// Returns the protected workspace metadata name when an agent write to `path`
 /// should be blocked before execution.
 pub fn forbidden_agent_metadata_write(
@@ -142,7 +137,7 @@ pub enum FileSystemSpecialPath {
     ProjectRoots {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
-        subpath: Option<PathBuf>,
+        subpath: Option<String>,
     },
     Tmpdir,
     SlashTmp,
@@ -158,16 +153,16 @@ pub enum FileSystemSpecialPath {
         path: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
-        subpath: Option<PathBuf>,
+        subpath: Option<String>,
     },
 }
 
 impl FileSystemSpecialPath {
-    pub fn project_roots(subpath: Option<PathBuf>) -> Self {
+    pub fn project_roots(subpath: Option<String>) -> Self {
         Self::ProjectRoots { subpath }
     }
 
-    pub fn unknown(path: impl Into<String>, subpath: Option<PathBuf>) -> Self {
+    pub fn unknown(path: impl Into<String>, subpath: Option<String>) -> Self {
         Self::Unknown {
             path: path.into(),
             subpath,
@@ -340,6 +335,7 @@ enum InvalidDenyReadGlobBehavior {
 #[ts(tag = "type")]
 pub enum FileSystemPath {
     Path {
+        // TODO(anp): Use PathUri once permission paths no longer require native-path rollout serialization.
         path: AbsolutePathBuf,
     },
     /// A git-style glob pattern. Pattern entries currently support
@@ -358,22 +354,26 @@ pub fn project_roots_glob_pattern(subpath: &Path) -> String {
     format!("{PROJECT_ROOTS_GLOB_PATTERN_PREFIX}{}", subpath.display())
 }
 
+fn read_only_file_system_entries() -> Vec<FileSystemSandboxEntry> {
+    vec![FileSystemSandboxEntry {
+        path: FileSystemPath::Special {
+            value: FileSystemSpecialPath::Root,
+        },
+        access: FileSystemAccessMode::Read,
+    }]
+}
+
 impl Default for FileSystemSandboxPolicy {
     fn default() -> Self {
-        Self {
-            kind: FileSystemSandboxKind::Restricted,
-            glob_scan_max_depth: None,
-            entries: vec![FileSystemSandboxEntry {
-                path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::Root,
-                },
-                access: FileSystemAccessMode::Read,
-            }],
-        }
+        Self::read_only()
     }
 }
 
 impl FileSystemSandboxPolicy {
+    pub fn read_only() -> Self {
+        Self::restricted(read_only_file_system_entries())
+    }
+
     pub fn unrestricted() -> Self {
         Self {
             kind: FileSystemSandboxKind::Unrestricted,
@@ -1661,7 +1661,7 @@ fn legacy_runtime_file_system_policy_for_cwd(
 
 fn append_default_read_only_project_root_subpath_if_no_explicit_rule(
     entries: &mut Vec<FileSystemSandboxEntry>,
-    subpath: impl Into<PathBuf>,
+    subpath: impl Into<String>,
 ) {
     append_default_read_only_entry_if_no_explicit_rule(
         entries,

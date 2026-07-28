@@ -27,6 +27,7 @@ const PRE_COMPACT_INPUT_FIXTURE: &str = "pre-compact.command.input.schema.json";
 const PRE_COMPACT_OUTPUT_FIXTURE: &str = "pre-compact.command.output.schema.json";
 const SESSION_START_INPUT_FIXTURE: &str = "session-start.command.input.schema.json";
 const SESSION_START_OUTPUT_FIXTURE: &str = "session-start.command.output.schema.json";
+const SESSION_END_INPUT_FIXTURE: &str = "session-end.command.input.schema.json";
 const USER_PROMPT_SUBMIT_INPUT_FIXTURE: &str = "user-prompt-submit.command.input.schema.json";
 const USER_PROMPT_SUBMIT_OUTPUT_FIXTURE: &str = "user-prompt-submit.command.output.schema.json";
 const SUBAGENT_START_INPUT_FIXTURE: &str = "subagent-start.command.input.schema.json";
@@ -182,6 +183,7 @@ pub(crate) struct PostCompactCommandOutputWire {
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PermissionRequestHookSpecificOutputWire {
+    #[schemars(schema_with = "permission_request_hook_event_name_schema")]
     pub hook_event_name: HookEventNameWire,
     #[serde(default)]
     pub decision: Option<PermissionRequestDecisionWire>,
@@ -223,6 +225,7 @@ pub(crate) enum PermissionRequestBehaviorWire {
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PostToolUseHookSpecificOutputWire {
+    #[schemars(schema_with = "post_tool_use_hook_event_name_schema")]
     pub hook_event_name: HookEventNameWire,
     #[serde(default)]
     pub additional_context: Option<String>,
@@ -235,6 +238,7 @@ pub(crate) struct PostToolUseHookSpecificOutputWire {
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PreToolUseHookSpecificOutputWire {
+    #[schemars(schema_with = "pre_tool_use_hook_event_name_schema")]
     pub hook_event_name: HookEventNameWire,
     #[serde(default)]
     pub permission_decision: Option<PreToolUsePermissionDecisionWire>,
@@ -388,6 +392,7 @@ pub(crate) struct SessionStartCommandOutputWire {
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SessionStartHookSpecificOutputWire {
+    #[schemars(schema_with = "session_start_hook_event_name_schema")]
     pub hook_event_name: HookEventNameWire,
     #[serde(default)]
     pub additional_context: Option<String>,
@@ -401,7 +406,17 @@ pub(crate) struct SubagentStartCommandOutputWire {
     #[serde(flatten)]
     pub universal: HookUniversalOutputWire,
     #[serde(default)]
-    pub hook_specific_output: Option<SessionStartHookSpecificOutputWire>,
+    pub hook_specific_output: Option<SubagentStartHookSpecificOutputWire>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SubagentStartHookSpecificOutputWire {
+    #[schemars(schema_with = "subagent_start_hook_event_name_schema")]
+    pub hook_event_name: HookEventNameWire,
+    #[serde(default)]
+    pub additional_context: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -423,6 +438,7 @@ pub(crate) struct UserPromptSubmitCommandOutputWire {
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub(crate) struct UserPromptSubmitHookSpecificOutputWire {
+    #[schemars(schema_with = "user_prompt_submit_hook_event_name_schema")]
     pub hook_event_name: HookEventNameWire,
     #[serde(default)]
     pub additional_context: Option<String>,
@@ -478,6 +494,19 @@ pub(crate) struct SessionStartCommandInput {
     pub permission_mode: String,
     #[schemars(schema_with = "session_start_source_schema")]
     pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "session-end.command.input")]
+pub(crate) struct SessionEndCommandInput {
+    pub session_id: String,
+    pub transcript_path: NullableString,
+    pub cwd: String,
+    #[schemars(schema_with = "session_end_hook_event_name_schema")]
+    pub hook_event_name: String,
+    #[schemars(schema_with = "session_end_reason_schema")]
+    pub reason: String,
 }
 
 impl SessionStartCommandInput {
@@ -632,6 +661,10 @@ pub fn write_schema_fixtures(schema_root: &Path) -> anyhow::Result<()> {
         schema_json::<SessionStartCommandOutputWire>()?,
     )?;
     write_schema(
+        &generated_dir.join(SESSION_END_INPUT_FIXTURE),
+        schema_json::<SessionEndCommandInput>()?,
+    )?;
+    write_schema(
         &generated_dir.join(USER_PROMPT_SUBMIT_INPUT_FIXTURE),
         schema_json::<UserPromptSubmitCommandInput>()?,
     )?;
@@ -720,6 +753,14 @@ fn canonicalize_json(value: &Value) -> Value {
 
 fn session_start_hook_event_name_schema(_gen: &mut SchemaGenerator) -> Schema {
     string_const_schema("SessionStart")
+}
+
+fn session_end_hook_event_name_schema(_gen: &mut SchemaGenerator) -> Schema {
+    string_const_schema("SessionEnd")
+}
+
+fn session_end_reason_schema(_gen: &mut SchemaGenerator) -> Schema {
+    string_const_schema("other")
 }
 
 fn post_tool_use_hook_event_name_schema(_gen: &mut SchemaGenerator) -> Schema {
@@ -817,10 +858,14 @@ mod tests {
     use super::PRE_TOOL_USE_INPUT_FIXTURE;
     use super::PRE_TOOL_USE_OUTPUT_FIXTURE;
     use super::PermissionRequestCommandInput;
+    use super::PermissionRequestCommandOutputWire;
     use super::PostCompactCommandInput;
     use super::PostToolUseCommandInput;
+    use super::PostToolUseCommandOutputWire;
     use super::PreCompactCommandInput;
     use super::PreToolUseCommandInput;
+    use super::PreToolUseCommandOutputWire;
+    use super::SESSION_END_INPUT_FIXTURE;
     use super::SESSION_START_INPUT_FIXTURE;
     use super::SESSION_START_OUTPUT_FIXTURE;
     use super::STOP_INPUT_FIXTURE;
@@ -829,17 +874,21 @@ mod tests {
     use super::SUBAGENT_START_OUTPUT_FIXTURE;
     use super::SUBAGENT_STOP_INPUT_FIXTURE;
     use super::SUBAGENT_STOP_OUTPUT_FIXTURE;
+    use super::SessionStartCommandOutputWire;
     use super::StopCommandInput;
     use super::SubagentCommandInputFields;
     use super::SubagentStartCommandInput;
+    use super::SubagentStartCommandOutputWire;
     use super::SubagentStopCommandInput;
     use super::USER_PROMPT_SUBMIT_INPUT_FIXTURE;
     use super::USER_PROMPT_SUBMIT_OUTPUT_FIXTURE;
     use super::UserPromptSubmitCommandInput;
+    use super::UserPromptSubmitCommandOutputWire;
     use super::schema_json;
     use super::write_schema_fixtures;
     use crate::events::common::SubagentHookContext;
     use pretty_assertions::assert_eq;
+    use schemars::JsonSchema;
     use serde_json::Value;
     use serde_json::json;
     use tempfile::TempDir;
@@ -882,6 +931,9 @@ mod tests {
             SESSION_START_OUTPUT_FIXTURE => {
                 include_str!("../schema/generated/session-start.command.output.schema.json")
             }
+            SESSION_END_INPUT_FIXTURE => {
+                include_str!("../schema/generated/session-end.command.input.schema.json")
+            }
             USER_PROMPT_SUBMIT_INPUT_FIXTURE => {
                 include_str!("../schema/generated/user-prompt-submit.command.input.schema.json")
             }
@@ -914,6 +966,20 @@ mod tests {
         value.replace("\r\n", "\n")
     }
 
+    fn assert_output_hook_event_name_const<T: JsonSchema>(definition: &str, expected: &str) {
+        let schema: Value =
+            serde_json::from_slice(&schema_json::<T>().expect("serialize hook output schema"))
+                .expect("parse hook output schema");
+
+        assert_eq!(
+            schema["definitions"][definition]["properties"]["hookEventName"],
+            json!({
+                "const": expected,
+                "type": "string",
+            })
+        );
+    }
+
     #[test]
     fn generated_hook_schemas_match_fixtures() {
         let temp_dir = TempDir::new().expect("create temp dir");
@@ -933,6 +999,7 @@ mod tests {
             PRE_TOOL_USE_OUTPUT_FIXTURE,
             SESSION_START_INPUT_FIXTURE,
             SESSION_START_OUTPUT_FIXTURE,
+            SESSION_END_INPUT_FIXTURE,
             USER_PROMPT_SUBMIT_INPUT_FIXTURE,
             USER_PROMPT_SUBMIT_OUTPUT_FIXTURE,
             SUBAGENT_START_INPUT_FIXTURE,
@@ -948,6 +1015,34 @@ mod tests {
             let actual = normalize_newlines(&actual);
             assert_eq!(expected, actual, "fixture should match generated schema");
         }
+    }
+
+    #[test]
+    fn hook_specific_output_event_names_are_event_specific_in_output_schemas() {
+        assert_output_hook_event_name_const::<PermissionRequestCommandOutputWire>(
+            "PermissionRequestHookSpecificOutputWire",
+            "PermissionRequest",
+        );
+        assert_output_hook_event_name_const::<PostToolUseCommandOutputWire>(
+            "PostToolUseHookSpecificOutputWire",
+            "PostToolUse",
+        );
+        assert_output_hook_event_name_const::<PreToolUseCommandOutputWire>(
+            "PreToolUseHookSpecificOutputWire",
+            "PreToolUse",
+        );
+        assert_output_hook_event_name_const::<SessionStartCommandOutputWire>(
+            "SessionStartHookSpecificOutputWire",
+            "SessionStart",
+        );
+        assert_output_hook_event_name_const::<SubagentStartCommandOutputWire>(
+            "SubagentStartHookSpecificOutputWire",
+            "SubagentStart",
+        );
+        assert_output_hook_event_name_const::<UserPromptSubmitCommandOutputWire>(
+            "UserPromptSubmitHookSpecificOutputWire",
+            "UserPromptSubmit",
+        );
     }
 
     #[test]

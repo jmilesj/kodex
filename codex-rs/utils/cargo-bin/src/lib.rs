@@ -35,36 +35,73 @@ pub enum CargoBinError {
 /// In `cargo test`, `CARGO_BIN_EXE_*` env vars are absolute.
 /// In `bazel test`, `CARGO_BIN_EXE_*` env vars are rlocationpaths, intended to be consumed by `rlocation`.
 /// This helper allows callers to transparently support both.
-#[allow(deprecated)]
 pub fn cargo_bin(name: &str) -> Result<PathBuf, CargoBinError> {
-    let env_keys = cargo_bin_env_keys(name);
+    let names = cargo_bin_names(name);
+    let env_keys = names
+        .iter()
+        .flat_map(|name| cargo_bin_env_keys(name))
+        .collect::<Vec<_>>();
     for key in &env_keys {
-        if let Some(value) = std::env::var_os(key) {
-            return resolve_bin_from_env(key, value);
+        if let Some(value) = std::env::var_os(key)
+            && let Ok(path) = resolve_bin_from_env(key, value)
+        {
+            return Ok(path);
         }
     }
-    match assert_cmd::Command::cargo_bin(name) {
-        Ok(cmd) => {
-            let mut path = PathBuf::from(cmd.get_program());
-            if !path.is_absolute() {
-                path = std::env::current_dir()
-                    .map_err(|source| CargoBinError::CurrentDir { source })?
-                    .join(path);
-            }
+
+    if let Some(path) = find_built_binary(&names)? {
+        return Ok(path);
+    }
+
+    Err(CargoBinError::NotFound {
+        name: name.to_owned(),
+        env_keys,
+        fallback: "target-dir lookup failed".to_string(),
+    })
+}
+
+fn find_built_binary(names: &[&str]) -> Result<Option<PathBuf>, CargoBinError> {
+    let mut roots = Vec::new();
+    if let Some(target_dir) = std::env::var_os("CARGO_TARGET_DIR") {
+        let target_dir = PathBuf::from(target_dir);
+        roots.push(target_dir.join("debug"));
+        roots.push(target_dir.join("release"));
+        roots.push(target_dir);
+    }
+    if let Ok(current_exe) = std::env::current_exe() {
+        for ancestor in current_exe.ancestors() {
+            roots.push(ancestor.to_path_buf());
+            roots.push(ancestor.join("debug"));
+            roots.push(ancestor.join("release"));
+        }
+    }
+    if let Ok(root) = repo_root() {
+        roots.push(root.join("codex-rs").join("target").join("debug"));
+        roots.push(root.join("codex-rs").join("target").join("release"));
+        roots.push(root.join("target").join("debug"));
+        roots.push(root.join("target").join("release"));
+    }
+
+    for root in roots {
+        for name in names {
+            let path = root.join(binary_file_name(name));
             if path.exists() {
-                Ok(path)
-            } else {
-                Err(CargoBinError::ResolvedPathDoesNotExist {
-                    key: "assert_cmd::Command::cargo_bin".to_owned(),
-                    path,
-                })
+                return Ok(Some(path));
             }
         }
-        Err(err) => Err(CargoBinError::NotFound {
-            name: name.to_owned(),
-            env_keys,
-            fallback: format!("assert_cmd fallback failed: {err}"),
-        }),
+    }
+
+    Ok(None)
+}
+
+fn binary_file_name(name: &str) -> String {
+    format!("{name}{}", std::env::consts::EXE_SUFFIX)
+}
+
+fn cargo_bin_names(name: &str) -> Vec<&str> {
+    match name {
+        "codex" | "codex-rs" => vec![name, "kodex"],
+        _ => vec![name],
     }
 }
 

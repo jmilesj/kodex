@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -26,6 +27,10 @@ use super::HookListEntry;
 use crate::config_rules::hook_states_from_stack;
 use crate::events::common::matcher_pattern_for_event;
 use crate::events::common::validate_matcher_pattern;
+use crate::events::session_end::SESSION_END_DEFAULT_TIMEOUT_SEC;
+use crate::events::session_end::SESSION_END_MAX_TIMEOUT_SEC;
+use crate::output_spill::AdditionalContextLimit;
+use crate::output_spill::DEFAULT_HOOK_OUTPUT_TOKEN_LIMIT;
 use codex_protocol::protocol::HookHandlerType;
 use codex_protocol::protocol::HookSource;
 use codex_protocol::protocol::HookTrustStatus;
@@ -69,6 +74,7 @@ pub(crate) fn discover_handlers(
     let mut hook_entries = Vec::new();
     let mut warnings = plugin_hook_load_warnings;
     let mut display_order = 0_i64;
+    let mut visited_json_hook_folders = HashSet::new();
     let hook_states = hook_states_from_stack(config_layer_stack);
     let policy = HookDiscoveryPolicy {
         allow_managed_hooks_only: config_layer_stack.is_some_and(|config_layer_stack| {
@@ -111,7 +117,12 @@ pub(crate) fn discover_handlers(
             if !policy.allows(&policy_source) {
                 continue;
             }
-            let json_hooks = load_hooks_json(layer.hooks_config_folder().as_deref(), &mut warnings);
+            let json_hooks = match layer.hooks_config_folder() {
+                Some(config_folder) if visited_json_hook_folders.insert(config_folder.clone()) => {
+                    load_hooks_json(Some(config_folder.as_path()), &mut warnings)
+                }
+                _ => None,
+            };
             let toml_hooks = load_toml_hooks_from_layer(layer, &mut warnings);
 
             if let (Some((json_source_path, json_events)), Some((toml_source_path, toml_events))) =
@@ -274,8 +285,15 @@ fn fallback_managed_hooks_source_path(
         Some(RequirementSource::MdmManagedPreferences { domain, key }) => {
             synthetic_layer_path(&format!("<mdm:{domain}:{key}>/requirements.toml"))
         }
-        Some(RequirementSource::CloudRequirements) => {
-            synthetic_layer_path("<cloud-requirements>/requirements.toml")
+        Some(RequirementSource::Composite { .. }) => {
+            synthetic_layer_path("<requirements-composition>/requirements.toml")
+        }
+        Some(RequirementSource::EnterpriseManaged { id, name }) => {
+            let name = escape_xml_text(name);
+            let id = escape_xml_text(id);
+            synthetic_layer_path(&format!(
+                "<enterprise-managed:{name}:{id}>/requirements.toml"
+            ))
         }
         Some(RequirementSource::LegacyManagedConfigTomlFromMdm) => {
             synthetic_layer_path("<legacy-managed-config.toml-mdm>/managed_config.toml")
@@ -361,6 +379,9 @@ fn config_toml_source_path(layer: &ConfigLayerEntry) -> AbsolutePathBuf {
         ConfigLayerSource::Mdm { domain, key } => {
             synthetic_layer_path(&format!("<mdm:{domain}:{key}>/{CONFIG_TOML_FILE}"))
         }
+        ConfigLayerSource::EnterpriseManaged { id, name } => synthetic_layer_path(&format!(
+            "<enterprise-managed:{name}:{id}>/{CONFIG_TOML_FILE}"
+        )),
         ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {
             synthetic_layer_path("<legacy-managed-config.toml-mdm>/managed_config.toml")
         }
@@ -378,6 +399,21 @@ fn synthetic_layer_path(path: &str) -> AbsolutePathBuf {
     {
         AbsolutePathBuf::resolve_path_against_base(path, "/")
     }
+}
+
+fn escape_xml_text(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&apos;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 fn append_hook_events(
@@ -434,13 +470,15 @@ fn append_matcher_groups(
                     timeout_sec,
                     r#async,
                     status_message,
+                    additional_context_limit,
                 } => {
                     let command = if cfg!(windows) {
                         command_windows.unwrap_or(command)
                     } else {
                         command
                     };
-                    if r#async {
+                    if r#async && event_name != codex_protocol::protocol::HookEventName::SessionEnd
+                    {
                         warnings.push(format!(
                             "skipping async hook in {}: async hooks are not supported yet",
                             source.path.display()
@@ -454,13 +492,45 @@ fn append_matcher_groups(
                         ));
                         continue;
                     }
-                    let timeout_sec = timeout_sec.unwrap_or(600).max(1);
+                    let timeout_sec = normalize_command_hook(
+                        event_name,
+                        timeout_sec,
+                        source.path.as_path(),
+                        warnings,
+                    );
+                    if r#async {
+                        warnings.push(format!(
+                            "running async SessionEnd hook synchronously in {}",
+                            source.path.display()
+                        ));
+                    }
+                    let additional_context_limit = if matches!(
+                        event_name,
+                        codex_protocol::protocol::HookEventName::PreToolUse
+                            | codex_protocol::protocol::HookEventName::PostToolUse
+                            | codex_protocol::protocol::HookEventName::SessionStart
+                            | codex_protocol::protocol::HookEventName::UserPromptSubmit
+                            | codex_protocol::protocol::HookEventName::SubagentStart
+                    ) {
+                        additional_context_limit
+                    } else {
+                        if additional_context_limit.is_some() {
+                            warnings.push(format!(
+                                "ignoring additionalContextLimit for {event_name:?} hook in {}: this event cannot emit additionalContext",
+                                source.path.display()
+                            ));
+                        }
+                        None
+                    };
+                    let normalized_additional_context_limit = additional_context_limit
+                        .filter(|limit| *limit != DEFAULT_HOOK_OUTPUT_TOKEN_LIMIT);
                     let normalized_handler = HookHandlerConfig::Command {
                         command: command.clone(),
                         command_windows: None,
                         timeout_sec: Some(timeout_sec),
                         r#async,
                         status_message: status_message.clone(),
+                        additional_context_limit: normalized_additional_context_limit,
                     };
                     let current_hash =
                         command_hook_hash(event_name, matcher, &group, normalized_handler);
@@ -483,6 +553,7 @@ fn append_matcher_groups(
                         command: Some(command.clone()),
                         timeout_sec,
                         status_message: status_message.clone(),
+                        additional_context_limit,
                         source_path: source.path.clone(),
                         source: source.source,
                         plugin_id: source.plugin_id.clone(),
@@ -505,6 +576,9 @@ fn append_matcher_groups(
                             command,
                             timeout_sec,
                             status_message,
+                            additional_context_limit: AdditionalContextLimit::from_config(
+                                additional_context_limit,
+                            ),
                             source_path: source.path.clone(),
                             source: source.source,
                             display_order: *display_order,
@@ -524,6 +598,30 @@ fn append_matcher_groups(
             }
         }
     }
+}
+
+/// Normalizes command-hook timeouts. SessionEnd defaults to one second and is capped at three
+/// seconds; all other command hooks keep the standard ten-minute default.
+fn normalize_command_hook(
+    event_name: codex_protocol::protocol::HookEventName,
+    timeout_sec: Option<u64>,
+    source_path: &Path,
+    warnings: &mut Vec<String>,
+) -> u64 {
+    if event_name != codex_protocol::protocol::HookEventName::SessionEnd {
+        return timeout_sec.unwrap_or(600).max(1);
+    }
+
+    let max_timeout_sec = SESSION_END_MAX_TIMEOUT_SEC;
+    if timeout_sec.is_some_and(|timeout_sec| timeout_sec > max_timeout_sec) {
+        warnings.push(format!(
+            "clamping SessionEnd hook timeout to {max_timeout_sec}s in {}",
+            source_path.display()
+        ));
+    }
+    timeout_sec
+        .unwrap_or(SESSION_END_DEFAULT_TIMEOUT_SEC)
+        .clamp(1, max_timeout_sec)
 }
 
 /// Hash a normalized, config-derived identity instead of source text so equivalent
@@ -586,6 +684,7 @@ fn hook_metadata_for_config_layer_source(source: &ConfigLayerSource) -> (HookSou
         ConfigLayerSource::User { .. } => (HookSource::User, false),
         ConfigLayerSource::Project { .. } => (HookSource::Project, false),
         ConfigLayerSource::Mdm { .. } => (HookSource::Mdm, true),
+        ConfigLayerSource::EnterpriseManaged { .. } => (HookSource::CloudManagedConfig, true),
         ConfigLayerSource::SessionFlags => (HookSource::SessionFlags, false),
         ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => {
             (HookSource::LegacyManagedConfigFile, true)
@@ -606,7 +705,14 @@ fn hook_source_for_requirement_source(source: Option<&RequirementSource>) -> Hoo
         Some(RequirementSource::LegacyManagedConfigTomlFromMdm) => {
             HookSource::LegacyManagedConfigMdm
         }
-        Some(RequirementSource::CloudRequirements) => HookSource::CloudRequirements,
+        Some(RequirementSource::Composite { sources }) => {
+            // Requirements hook composition preserves contributing sources in
+            // priority order, but discovery only carries one source for the
+            // whole merged hooks field. Use the primary contributor as the best
+            // available coarse attribution.
+            hook_source_for_requirement_source(sources.first())
+        }
+        Some(RequirementSource::EnterpriseManaged { .. }) => HookSource::CloudRequirements,
         Some(RequirementSource::Unknown) | None => HookSource::Unknown,
     }
 }
@@ -616,6 +722,7 @@ mod tests {
     use codex_config::ConfigLayerEntry;
     use codex_config::ConfigLayerSource;
     use codex_config::HookEventsToml;
+    use codex_config::RequirementSource;
     use codex_protocol::protocol::HookEventName;
     use codex_protocol::protocol::HookSource;
     use codex_utils_absolute_path::AbsolutePathBuf;
@@ -624,7 +731,10 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::ConfiguredHandler;
+    use super::HookListEntry;
     use super::append_matcher_groups;
+    use crate::output_spill::AdditionalContextLimit;
+    use crate::output_spill::DEFAULT_HOOK_OUTPUT_TOKEN_LIMIT;
     use codex_config::HookHandlerConfig;
     use codex_config::HookStateToml;
     use codex_config::MatcherGroup;
@@ -672,6 +782,41 @@ mod tests {
         }
     }
 
+    #[test]
+    fn composite_requirement_hook_source_uses_primary_source() {
+        let source = RequirementSource::Composite {
+            sources: vec![
+                RequirementSource::SystemRequirementsToml {
+                    file: test_path_buf("/etc/codex/requirements.toml").abs(),
+                },
+                RequirementSource::EnterpriseManaged {
+                    id: "layer-1".to_string(),
+                    name: "Engineering".to_string(),
+                },
+            ],
+        };
+
+        assert_eq!(
+            super::hook_source_for_requirement_source(Some(&source)),
+            HookSource::System
+        );
+    }
+
+    #[test]
+    fn enterprise_managed_synthetic_path_escapes_display_fields() {
+        let source = RequirementSource::EnterpriseManaged {
+            id: "id<&>".to_string(),
+            name: "Name <Admin> & \"Ops\"".to_string(),
+        };
+
+        let source_path = super::fallback_managed_hooks_source_path(Some(&source));
+        let source_path = source_path.display().to_string();
+
+        assert!(source_path.contains("Name &lt;Admin&gt; &amp; &quot;Ops&quot;"));
+        assert!(source_path.contains("id&lt;&amp;&gt;"));
+        assert!(!source_path.contains("Name <Admin>"));
+    }
+
     fn command_group(matcher: Option<&str>) -> MatcherGroup {
         MatcherGroup {
             matcher: matcher.map(str::to_string),
@@ -681,8 +826,111 @@ mod tests {
                 timeout_sec: None,
                 r#async: false,
                 status_message: None,
+                additional_context_limit: None,
             }],
         }
+    }
+
+    fn command_group_with_additional_context_limit(
+        additional_context_limit: usize,
+    ) -> MatcherGroup {
+        MatcherGroup {
+            matcher: None,
+            hooks: vec![HookHandlerConfig::Command {
+                command: "echo hello".to_string(),
+                command_windows: None,
+                timeout_sec: None,
+                r#async: false,
+                status_message: None,
+                additional_context_limit: Some(additional_context_limit),
+            }],
+        }
+    }
+
+    fn discover_command(
+        event_name: HookEventName,
+        additional_context_limit: Option<usize>,
+    ) -> (ConfiguredHandler, HookListEntry, Vec<String>) {
+        let source_path = source_path();
+        let hook_states = std::collections::HashMap::new();
+        let mut handlers = Vec::new();
+        let mut entries = Vec::new();
+        let mut warnings = Vec::new();
+        let mut display_order = 0;
+        append_matcher_groups(
+            &mut handlers,
+            &mut entries,
+            &mut warnings,
+            &mut display_order,
+            &hook_handler_source(&source_path, &hook_states),
+            event_name,
+            vec![match additional_context_limit {
+                Some(limit) => command_group_with_additional_context_limit(limit),
+                None => command_group(/*matcher*/ None),
+            }],
+        );
+        (handlers.remove(0), entries.remove(0), warnings)
+    }
+
+    #[test]
+    fn supported_events_retain_per_handler_additional_context_limit_and_hash_it() {
+        for event_name in [
+            HookEventName::PreToolUse,
+            HookEventName::PostToolUse,
+            HookEventName::SessionStart,
+            HookEventName::UserPromptSubmit,
+            HookEventName::SubagentStart,
+        ] {
+            let (_, default_entry, _) =
+                discover_command(event_name, /*additional_context_limit*/ None);
+            let (explicit_default_handler, explicit_default_entry, _) = discover_command(
+                event_name,
+                /*additional_context_limit*/ Some(DEFAULT_HOOK_OUTPUT_TOKEN_LIMIT),
+            );
+            let (custom_handler, custom_entry, _) =
+                discover_command(event_name, /*additional_context_limit*/ Some(20_000));
+            let (unlimited_handler, unlimited_entry, _) =
+                discover_command(event_name, /*additional_context_limit*/ Some(0));
+
+            assert_eq!(
+                custom_handler.additional_context_limit,
+                AdditionalContextLimit::from_config(Some(20_000))
+            );
+            assert_eq!(custom_entry.additional_context_limit, Some(20_000));
+            assert_ne!(default_entry.current_hash, custom_entry.current_hash);
+            assert_eq!(
+                explicit_default_handler.additional_context_limit,
+                AdditionalContextLimit::from_config(Some(DEFAULT_HOOK_OUTPUT_TOKEN_LIMIT))
+            );
+            assert_eq!(
+                explicit_default_entry.additional_context_limit,
+                Some(DEFAULT_HOOK_OUTPUT_TOKEN_LIMIT)
+            );
+            assert_eq!(
+                default_entry.current_hash,
+                explicit_default_entry.current_hash
+            );
+            assert_eq!(
+                unlimited_handler.additional_context_limit,
+                AdditionalContextLimit::from_config(Some(0))
+            );
+            assert_eq!(unlimited_entry.additional_context_limit, Some(0));
+            assert_ne!(default_entry.current_hash, unlimited_entry.current_hash);
+        }
+    }
+
+    #[test]
+    fn unsupported_event_warns_and_ignores_additional_context_limit() {
+        let source_path = source_path();
+        let (handler, _, warnings) = discover_command(
+            HookEventName::Stop,
+            /*additional_context_limit*/ Some(4_096),
+        );
+
+        assert_eq!(handler.additional_context_limit, Default::default());
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("ignoring additionalContextLimit for Stop hook"));
+        assert!(warnings[0].contains(&source_path.display().to_string()));
     }
 
     #[test]
@@ -712,6 +960,7 @@ mod tests {
                 command: "echo hello".to_string(),
                 timeout_sec: 600,
                 status_message: None,
+                additional_context_limit: Default::default(),
                 source_path: source_path.clone(),
                 source: hook_source(),
                 display_order: 0,
@@ -747,11 +996,94 @@ mod tests {
                 command: "echo hello".to_string(),
                 timeout_sec: 600,
                 status_message: None,
+                additional_context_limit: Default::default(),
                 source_path: source_path.clone(),
                 source: hook_source(),
                 display_order: 0,
                 env: std::collections::HashMap::new(),
             }]
+        );
+    }
+
+    #[test]
+    fn session_end_normalizes_timeout() {
+        let mut handlers = Vec::new();
+        let mut hook_entries = Vec::new();
+        let mut warnings = Vec::new();
+        let mut display_order = 0;
+        let source_path = source_path();
+        let hook_states = std::collections::HashMap::new();
+
+        append_matcher_groups(
+            &mut handlers,
+            &mut hook_entries,
+            &mut warnings,
+            &mut display_order,
+            &hook_handler_source(&source_path, &hook_states),
+            HookEventName::SessionEnd,
+            vec![MatcherGroup {
+                matcher: Some("other".to_string()),
+                hooks: vec![
+                    HookHandlerConfig::Command {
+                        command: "echo default".to_string(),
+                        command_windows: None,
+                        timeout_sec: None,
+                        r#async: false,
+                        status_message: None,
+                        additional_context_limit: None,
+                    },
+                    HookHandlerConfig::Command {
+                        command: "echo clamped".to_string(),
+                        command_windows: None,
+                        timeout_sec: Some(600),
+                        r#async: true,
+                        status_message: None,
+                        additional_context_limit: None,
+                    },
+                ],
+            }],
+        );
+
+        assert_eq!(
+            handlers
+                .iter()
+                .map(|handler| handler.timeout_sec)
+                .collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        assert_eq!(
+            handlers
+                .iter()
+                .map(|handler| handler.matcher.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("other"), Some("other")]
+        );
+        assert_eq!(
+            hook_entries
+                .iter()
+                .map(|entry| entry.timeout_sec)
+                .collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        assert_eq!(
+            hook_entries
+                .iter()
+                .map(|entry| entry.matcher.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("other"), Some("other")]
+        );
+        assert_eq!(
+            warnings,
+            vec![
+                format!(
+                    "clamping SessionEnd hook timeout to 3s in {}",
+                    source_path.display()
+                ),
+                format!(
+                    "running async SessionEnd hook synchronously in {}",
+                    source_path.display()
+                ),
+            ]
         );
     }
 
@@ -894,6 +1226,7 @@ mod tests {
                         timeout_sec: None,
                         r#async: false,
                         status_message: None,
+                        additional_context_limit: None,
                     }],
                 }],
                 ..Default::default()
@@ -924,6 +1257,7 @@ mod tests {
                     timeout_sec: None,
                     r#async: false,
                     status_message: None,
+                    additional_context_limit: None,
                 }],
             }],
         );
@@ -989,6 +1323,13 @@ mod tests {
                 key: "config".to_string(),
             }),
             (HookSource::Mdm, true),
+        );
+        assert_eq!(
+            super::hook_metadata_for_config_layer_source(&ConfigLayerSource::EnterpriseManaged {
+                id: "cfg_123".to_string(),
+                name: "Base policy".to_string(),
+            }),
+            (HookSource::CloudManagedConfig, true),
         );
         assert_eq!(
             super::hook_metadata_for_config_layer_source(&ConfigLayerSource::SessionFlags),

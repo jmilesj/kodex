@@ -17,7 +17,7 @@ Primary upstream areas to inspect after merges:
 - `codex-rs/cli/src/login.rs`
 - `codex-rs/exec/src/lib.rs`
 - `codex-rs/tui/src/lib.rs`
-- `codex-rs/cloud-requirements/src/lib.rs`
+- `codex-rs/cloud-config/src/lib.rs`
 
 ## Local Implementation Paths
 
@@ -45,13 +45,13 @@ just test -p codex-login
 just test -p codex-cli
 ```
 
-When TUI, exec, or cloud requirements auth wiring changed upstream, also run the matching scoped tests:
+When TUI, exec, or cloud config auth wiring changed upstream, also run the matching scoped tests:
 
 ```bash
 cd codex-rs
 just test -p codex-tui
 just test -p codex-exec
-just test -p codex-cloud-requirements
+just test -p codex-cloud-config
 ```
 
 Targeted tests to look for in the output:
@@ -81,11 +81,11 @@ Manual checks:
 
 ## Status
 
-`needs review`
+`active`
 
 ## Last Verified
 
-Pending review after upstream merge `090144e0ec`.
+Upstream tag `rust-v0.145.0`, peeled commit `25af12f7e6`.
 
 ## Retirement Condition
 

@@ -1,8 +1,7 @@
 use super::ContextualUserFragment;
+use codex_prompts::END_INSTRUCTIONS;
 use codex_protocol::protocol::REALTIME_CONVERSATION_CLOSE_TAG;
 use codex_protocol::protocol::REALTIME_CONVERSATION_OPEN_TAG;
-
-const REALTIME_END_INSTRUCTIONS: &str = include_str!("prompts/realtime/realtime_end.md");
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RealtimeEndInstructions {
@@ -18,7 +17,7 @@ impl RealtimeEndInstructions {
 }
 
 impl ContextualUserFragment for RealtimeEndInstructions {
-    fn role() -> &'static str {
+    fn role(&self) -> &'static str {
         "developer"
     }
 
@@ -33,11 +32,11 @@ impl ContextualUserFragment for RealtimeEndInstructions {
         )
     }
 
+    fn matches_text(text: &str) -> bool {
+        text.contains(END_INSTRUCTIONS.trim())
+    }
+
     fn body(&self) -> String {
-        format!(
-            "\n{}\n\nReason: {}\n",
-            REALTIME_END_INSTRUCTIONS.trim(),
-            self.reason
-        )
+        format!("\n{}\n\nReason: {}\n", END_INSTRUCTIONS.trim(), self.reason)
     }
 }

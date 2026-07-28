@@ -22,9 +22,10 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ExecCommandOutputDeltaEvent;
 use codex_protocol::protocol::ExecCommandSource;
 use codex_protocol::protocol::ExecOutputStream;
-use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::PathUri;
 
 pub(crate) const TRAILING_OUTPUT_GRACE: Duration = Duration::from_millis(100);
+const OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Upper bound for a single ExecCommandOutputDelta chunk emitted by unified exec.
 ///
@@ -110,7 +111,7 @@ pub(crate) fn spawn_exit_watcher(
     turn_ref: Arc<TurnContext>,
     call_id: String,
     command: Vec<String>,
-    cwd: AbsolutePathBuf,
+    cwd: PathUri,
     process_id: i32,
     transcript: Arc<Mutex<HeadTailBuffer>>,
     started_at: Instant,
@@ -120,7 +121,13 @@ pub(crate) fn spawn_exit_watcher(
 
     tokio::spawn(async move {
         exit_token.cancelled().await;
-        output_drained.notified().await;
+        let _ = tokio::time::timeout(OUTPUT_DRAIN_TIMEOUT, output_drained.notified()).await;
+
+        let fallback_output = {
+            let output_handles = process.output_handles();
+            let guard = output_handles.output_buffer.lock().await;
+            String::from_utf8_lossy(&guard.to_bytes_with_omission_marker()).to_string()
+        };
 
         let duration = Instant::now().saturating_duration_since(started_at);
         if let Some(message) = process.failure_message() {
@@ -132,7 +139,7 @@ pub(crate) fn spawn_exit_watcher(
                 cwd,
                 Some(process_id.to_string()),
                 transcript,
-                String::new(),
+                fallback_output,
                 message,
                 duration,
             )
@@ -147,7 +154,7 @@ pub(crate) fn spawn_exit_watcher(
                 cwd,
                 Some(process_id.to_string()),
                 transcript,
-                String::new(),
+                fallback_output,
                 exit_code,
                 duration,
             )
@@ -197,7 +204,7 @@ pub(crate) async fn emit_exec_end_for_unified_exec(
     turn_ref: Arc<TurnContext>,
     call_id: String,
     command: Vec<String>,
-    cwd: AbsolutePathBuf,
+    cwd: PathUri,
     process_id: Option<String>,
     transcript: Arc<Mutex<HeadTailBuffer>>,
     fallback_output: String,
@@ -242,7 +249,7 @@ pub(crate) async fn emit_failed_exec_end_for_unified_exec(
     turn_ref: Arc<TurnContext>,
     call_id: String,
     command: Vec<String>,
-    cwd: AbsolutePathBuf,
+    cwd: PathUri,
     process_id: Option<String>,
     transcript: Arc<Mutex<HeadTailBuffer>>,
     fallback_output: String,
@@ -326,7 +333,16 @@ async fn resolve_aggregated_output(
         return fallback;
     }
 
-    String::from_utf8_lossy(&guard.to_bytes()).to_string()
+    let transcript_output =
+        String::from_utf8_lossy(&guard.to_bytes_with_omission_marker()).to_string();
+    if !fallback.is_empty()
+        && guard.omitted_bytes() == 0
+        && (fallback.contains(" bytes omitted ") || fallback.len() > transcript_output.len())
+    {
+        return fallback;
+    }
+
+    transcript_output
 }
 
 #[cfg(test)]

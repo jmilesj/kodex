@@ -11,6 +11,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
+const codexPackageRoot = realpathSync(path.join(__dirname, ".."));
 
 const PLATFORM_PACKAGE_BY_TARGET = {
   "x86_64-unknown-linux-musl": "kodex-linux-x64",
@@ -103,22 +104,31 @@ function resolveNativePackage(vendorRoot) {
   return null;
 }
 
-let nativePackage;
-try {
-  const packageJsonPath = require.resolve(`${platformPackage}/package.json`);
-  nativePackage = resolveNativePackage(
-    path.join(path.dirname(packageJsonPath), "vendor"),
-  );
-} catch {
-  nativePackage = resolveNativePackage(localVendorRoot);
+function findKodexNativePackage() {
+  try {
+    const packageJsonPath = require.resolve(`${platformPackage}/package.json`);
+    const nativePackage = resolveNativePackage(
+      path.join(path.dirname(packageJsonPath), "vendor"),
+    );
+    if (nativePackage) {
+      return nativePackage;
+    }
+  } catch {
+    // Fall back to the local vendor tree below.
+  }
+
+  return resolveNativePackage(localVendorRoot);
 }
 
+const nativePackage = findKodexNativePackage();
 if (!nativePackage) {
   const packageManager = detectPackageManager();
   const updateCommand =
     packageManager === "bun"
       ? "bun install -g kodex@latest"
-      : "npm install -g kodex@latest";
+      : packageManager === "pnpm"
+        ? "pnpm add -g kodex@latest"
+        : "npm install -g kodex@latest";
   throw new Error(
     `Missing optional dependency ${platformPackage}. Reinstall Kodex: ${updateCommand}`,
   );
@@ -132,14 +142,16 @@ const { binaryPath, pathDir } = nativePackage;
 // and guarantees that when either the child terminates or the parent
 // receives a fatal signal, both processes exit in a predictable manner.
 
-function getUpdatedPath(newDirs) {
-  const pathSep = process.platform === "win32" ? ";" : ":";
-  const existingPath = process.env.PATH || "";
-  const updatedPath = [
-    ...newDirs,
-    ...existingPath.split(pathSep).filter(Boolean),
-  ].join(pathSep);
-  return updatedPath;
+function isPnpmOwnedCodexInstall(nodeModulesDir) {
+  if (!existsSync(path.join(nodeModulesDir, ".modules.yaml"))) {
+    return false;
+  }
+
+  try {
+    return realpathSync(path.join(nodeModulesDir, "kodex")) === codexPackageRoot;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -147,6 +159,27 @@ function getUpdatedPath(newDirs) {
  * in order to give the user a hint about how to update it.
  */
 function detectPackageManager() {
+  // pnpm's owning node_modules directory can be several parents above the
+  // package in isolated global layouts. Search ancestors of both the canonical
+  // package root and lexical entrypoint because pnpm may link either path.
+  const entrypointDir = path.dirname(path.resolve(process.argv[1]));
+  for (const startDir of new Set([codexPackageRoot, entrypointDir])) {
+    const filesystemRoot = path.parse(startDir).root;
+    for (
+      let currentDir = startDir;
+      currentDir !== filesystemRoot;
+      currentDir = path.dirname(currentDir)
+    ) {
+      if (isPnpmOwnedCodexInstall(path.join(currentDir, "node_modules"))) {
+        return "pnpm";
+      }
+    }
+
+    if (isPnpmOwnedCodexInstall(path.join(filesystemRoot, "node_modules"))) {
+      return "pnpm";
+    }
+  }
+
   const userAgent = process.env.npm_config_user_agent || "";
   if (/\bbun\//.test(userAgent)) {
     return "bun";
@@ -167,19 +200,35 @@ function detectPackageManager() {
   return userAgent ? "npm" : null;
 }
 
+const packageManager = detectPackageManager();
+const packageManagerEnvVar =
+  packageManager === "bun"
+    ? "CODEX_MANAGED_BY_BUN"
+    : packageManager === "pnpm"
+      ? "CODEX_MANAGED_BY_PNPM"
+      : "CODEX_MANAGED_BY_NPM";
+
+function getUpdatedPath(newDirs) {
+  const pathSep = process.platform === "win32" ? ";" : ":";
+  const existingPath = process.env.PATH || "";
+  return [...newDirs, ...existingPath.split(pathSep).filter(Boolean)].join(
+    pathSep,
+  );
+}
+
 const additionalDirs = [];
 if (existsSync(pathDir)) {
   additionalDirs.push(pathDir);
 }
-const updatedPath = getUpdatedPath(additionalDirs);
-
-const env = { ...process.env, PATH: updatedPath };
-const packageManagerEnvVar =
-  detectPackageManager() === "bun"
-    ? "CODEX_MANAGED_BY_BUN"
-    : "CODEX_MANAGED_BY_NPM";
+const env = {
+  ...process.env,
+  PATH: getUpdatedPath(additionalDirs),
+  CODEX_MANAGED_PACKAGE_ROOT: codexPackageRoot,
+};
+delete env.CODEX_MANAGED_BY_NPM;
+delete env.CODEX_MANAGED_BY_BUN;
+delete env.CODEX_MANAGED_BY_PNPM;
 env[packageManagerEnvVar] = "1";
-env.CODEX_MANAGED_PACKAGE_ROOT = realpathSync(path.join(__dirname, ".."));
 
 const child = spawn(binaryPath, process.argv.slice(2), {
   stdio: "inherit",

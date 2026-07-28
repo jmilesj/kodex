@@ -16,8 +16,10 @@ pub enum UpdateAction {
     /// Update via the disabled `kodex update` command.
     BunGlobalLatest,
     /// Update via the disabled `kodex update` command.
-    BrewUpgrade,
+    PnpmGlobalLatest,
     /// Update via the disabled `kodex update` command.
+    BrewUpgrade,
+    /// Update via the fork installer.
     StandaloneUnix,
 }
 
@@ -27,6 +29,7 @@ impl UpdateAction {
         match &context.method {
             InstallMethod::Npm => Some(UpdateAction::NpmGlobalLatest),
             InstallMethod::Bun => Some(UpdateAction::BunGlobalLatest),
+            InstallMethod::Pnpm => Some(UpdateAction::PnpmGlobalLatest),
             InstallMethod::Brew => Some(UpdateAction::BrewUpgrade),
             InstallMethod::Standalone {
                 platform: StandalonePlatform::Unix,
@@ -45,6 +48,7 @@ impl UpdateAction {
         match self {
             UpdateAction::NpmGlobalLatest => ("npm", &["install", "-g", "kodex"]),
             UpdateAction::BunGlobalLatest => ("bun", &["install", "-g", "kodex"]),
+            UpdateAction::PnpmGlobalLatest => ("pnpm", &["add", "-g", "kodex"]),
             UpdateAction::BrewUpgrade => ("brew", &["upgrade", "--cask", "kodex"]),
             UpdateAction::StandaloneUnix => ("sh", &["-c", INSTALL_SCRIPT_COMMAND]),
         }
@@ -99,6 +103,13 @@ mod tests {
         );
         assert_eq!(
             UpdateAction::from_install_context(&InstallContext {
+                method: InstallMethod::Pnpm,
+                package_layout: None,
+            }),
+            Some(UpdateAction::PnpmGlobalLatest)
+        );
+        assert_eq!(
+            UpdateAction::from_install_context(&InstallContext {
                 method: InstallMethod::Brew,
                 package_layout: None,
             }),
@@ -129,7 +140,23 @@ mod tests {
     }
 
     #[test]
-    fn update_commands_delegate_to_disabled_update_subcommand() {
+    fn update_commands_delegate_to_fork_commands() {
+        assert_eq!(
+            UpdateAction::NpmGlobalLatest.command_args(),
+            ("npm", &["install", "-g", "kodex"][..],)
+        );
+        assert_eq!(
+            UpdateAction::BunGlobalLatest.command_args(),
+            ("bun", &["install", "-g", "kodex"][..],)
+        );
+        assert_eq!(
+            UpdateAction::PnpmGlobalLatest.command_args(),
+            ("pnpm", &["add", "-g", "kodex"][..],)
+        );
+        assert_eq!(
+            UpdateAction::BrewUpgrade.command_args(),
+            ("brew", &["upgrade", "--cask", "kodex"][..],)
+        );
         assert_eq!(
             UpdateAction::StandaloneUnix.command_args(),
             ("sh", &["-c", INSTALL_SCRIPT_COMMAND][..],)

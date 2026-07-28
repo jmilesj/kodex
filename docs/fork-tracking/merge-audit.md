@@ -85,3 +85,54 @@ The merge recorded conflicts or fork-review decisions in these areas that overla
 ### Outcome
 
 The upstream merge was resolved with fork release behavior preserved. CLI rename behavior received partial verification, while telemetry/updater and project-local auth follow-up checks remain tracked as `needs review`.
+
+## 2026-07-27 - Upstream Sync `rust-v0.145.0`
+
+- Merge commit: this merge resolution commit.
+- Local pre-merge parent: `553b1e4eeba818c546fdc2df54915513e9e9eca4`
+- Upstream tag: `rust-v0.145.0` (`1635de866c61d1b76e50b31928ee6d61482435a8`)
+- Peeled upstream commit: `25af12f7e61572b0bc18ddb1008be543b91519b0`
+- Merge target: upstream release version `0.145.0`
+
+### Conflict Areas
+
+The merge recorded conflicts or fork-review decisions in these areas that overlap fork-only behavior:
+
+- CLI rename, package wiring, and user-facing command text: `codex-rs/cli/`, `codex-rs/utils/cargo-bin/`, `codex-cli/`, package scripts, installer scripts, and TUI snapshots.
+- Telemetry, analytics, and update disablement: `codex-rs/analytics/`, analytics-dependent app-server/core tests, `codex-rs/tui/src/update_action.rs`, and `codex-rs/app-server-daemon/`.
+- Project-local auth and config loading: `codex-rs/core/src/config/`, `codex-rs/login/src/auth/`, `codex-rs/tui/src/status/tests.rs`, and app-server websocket startup fixtures.
+- Release and dependency wiring: `codex-rs/Cargo.toml`, `codex-rs/Cargo.lock`, `MODULE.bazel.lock`, and vendored `rama-*` crates.
+- Upstream behavior changes adjacent to fork code: thread goal state migration ordering, `UsageLimited` to `BudgetLimited` goal status naming, unified exec lifecycle handling, network proxy local binding policy, app-server v2 analytics expectations, and protocol retry classification.
+
+### Feature Review
+
+| Feature | Result | Evidence | Follow-up |
+| --- | --- | --- | --- |
+| Kodex CLI rename, telemetry disablement, and update disablement | `active` | Preserved `kodex` CLI/package/install behavior, disabled updater output, disabled analytics delivery, and `kodex` user-facing text in CLI/TUI snapshots. `just test -p codex-cli`, `just test -p codex-analytics`, `just test -p codex-app-server-daemon`, `just test -p codex-tui`, package syntax checks, release script tests, and affected app-server/core tests passed. | None. |
+| Project-local auth files | `active` | Preserved project-local auth precedence and isolated app-server/TUI fixtures from repository `.codex/auth.json` pollution. `just test -p codex-core`, `just test -p codex-login`, `just test -p codex-cli`, `just test -p codex-cloud-config`, `just test -p codex-tui`, and affected app-server tests passed. | None. |
+| Fork release pipeline, installer bootstrap, and release versioning | `active` | Preserved fork release script behavior, installer bootstrap, lockfile state, vendored dependency overrides, `kodex` package manifest, and version/update snapshots for `0.145.0`. Release script tests, installer syntax checks, `just bazel-lock-update`, and `just bazel-lock-check` passed. | None. |
+
+### Supporting Checks
+
+- `python3 -m py_compile`: passed for release, install, package, and staging scripts.
+- `bash -n scripts/install/install.sh`: passed.
+- `node --check codex-cli/bin/kodex.js`: passed.
+- `.github/scripts/test_release_workflow.py`: passed.
+- `.github/scripts/test_install_sh.py`: passed.
+- `.github/scripts/test_kodex_release_version.py`: passed.
+- `.github/scripts/test_cli_manifest.py`: passed.
+- `just bazel-lock-update`: passed.
+- `just bazel-lock-check`: passed.
+- `just test -p codex-login`: passed.
+- `just test -p codex-cloud-config`: passed.
+- `just test -p codex-goal-extension`: passed.
+- `just test -p codex-app-server-daemon`: passed.
+- `just test -p codex-network-proxy`: passed.
+- `just test -p codex-tui`: passed, with intentional snapshot updates accepted.
+- `just test -p codex-analytics`: passed.
+- Affected core/CLI/support crates: `just test -p codex-core -p codex-cli -p codex-rmcp-client -p codex-exec -p codex-linux-sandbox -p codex-code-mode-host -p codex-shell-escalation -p codex-apply-patch`: passed.
+- Affected app-server/protocol/state/network/api crates: `just test -p codex-analytics -p codex-app-server -p codex-app-server-protocol -p codex-state -p codex-network-proxy -p codex-protocol -p codex-api`: passed with one retried flaky `login_account_chatgpt_redirects_to_hosted_success_page`.
+
+### Outcome
+
+The upstream `rust-v0.145.0` sync was resolved with tracked fork behavior preserved and reverified. The full workspace `just test` suite was not run during this audit; scoped tests covered the crates touched by the merge resolution.

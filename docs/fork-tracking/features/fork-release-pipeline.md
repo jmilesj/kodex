@@ -89,7 +89,7 @@ Manual checks:
 
 ## Last Verified
 
-Upstream merge `090144e0ec`.
+Upstream tag `rust-v0.145.0`, peeled commit `25af12f7e6`.
 
 ## Retirement Condition
 

@@ -13,7 +13,7 @@ If you want Kodex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 
 ### Installing and running Kodex CLI
 
-Run the following on Mac or Linux to install Codex CLI:
+Run the following on Mac or Linux to install Kodex CLI:
 
 ```shell
 curl -fsSL https://raw.githubusercontent.com/jmilesj/kodex/main/scripts/install/install.sh | sh

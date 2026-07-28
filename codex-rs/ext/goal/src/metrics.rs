@@ -5,7 +5,6 @@ use codex_otel::GOAL_CREATED_METRIC;
 use codex_otel::GOAL_DURATION_SECONDS_METRIC;
 use codex_otel::GOAL_RESUMED_METRIC;
 use codex_otel::GOAL_TOKEN_COUNT_METRIC;
-use codex_otel::GOAL_USAGE_LIMITED_METRIC;
 use codex_otel::MetricsClient;
 
 #[derive(Clone, Default)]
@@ -43,7 +42,7 @@ impl GoalMetrics {
                 Some(
                     codex_state::ThreadGoalStatus::Paused
                         | codex_state::ThreadGoalStatus::Blocked
-                        | codex_state::ThreadGoalStatus::UsageLimited
+                        | codex_state::ThreadGoalStatus::BudgetLimited
                 )
             )
         {
@@ -62,7 +61,6 @@ impl GoalMetrics {
 
         let counter = match goal.status {
             codex_state::ThreadGoalStatus::Blocked => GOAL_BLOCKED_METRIC,
-            codex_state::ThreadGoalStatus::UsageLimited => GOAL_USAGE_LIMITED_METRIC,
             codex_state::ThreadGoalStatus::BudgetLimited => GOAL_BUDGET_LIMITED_METRIC,
             codex_state::ThreadGoalStatus::Complete => GOAL_COMPLETED_METRIC,
             codex_state::ThreadGoalStatus::Active | codex_state::ThreadGoalStatus::Paused => {

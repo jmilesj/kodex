@@ -80,11 +80,11 @@ Manual checks:
 
 ## Status
 
-`needs review`
+`active`
 
 ## Last Verified
 
-Partial review after upstream merge `090144e0ec`; telemetry/updater scoped tests are still pending.
+Upstream tag `rust-v0.145.0`, peeled commit `25af12f7e6`.
 
 ## Retirement Condition
 
