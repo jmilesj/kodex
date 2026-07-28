@@ -13,8 +13,6 @@ use crate::function_tool::FunctionCallError;
 use crate::session::step_context::StepContext;
 use crate::shell::default_user_shell;
 use crate::shell_snapshot::ShellSnapshot;
-use crate::skills::SkillRenderSideEffects;
-use crate::skills::render::SkillMetadataBudget;
 use crate::test_support::models_manager_with_provider;
 use crate::tools::format_exec_output_str;
 use codex_config::ConfigLayerStack;
@@ -72,7 +70,6 @@ use codex_protocol::protocol::TurnEnvironmentSelections;
 use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
 use codex_utils_path_uri::PathUri;
-use tracing::Span;
 
 use crate::connectors::AppInfo;
 use crate::rollout::recorder::RolloutRecorder;
@@ -103,12 +100,6 @@ use codex_execpolicy::Decision;
 use codex_execpolicy::NetworkRuleProtocol;
 use codex_execpolicy::Policy;
 use codex_network_proxy::NetworkProxyConfig;
-use codex_otel::MetricsClient;
-use codex_otel::MetricsConfig;
-use codex_otel::THREAD_SKILLS_DESCRIPTION_TRUNCATED_CHARS_METRIC;
-use codex_otel::THREAD_SKILLS_ENABLED_TOTAL_METRIC;
-use codex_otel::THREAD_SKILLS_KEPT_TOTAL_METRIC;
-use codex_otel::THREAD_SKILLS_TRUNCATED_METRIC;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
@@ -150,7 +141,6 @@ use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::protocol::UserMessageEvent;
-use codex_protocol::protocol::W3cTraceContext;
 use codex_rmcp_client::ElicitationAction;
 use core_test_support::PathBufExt;
 use core_test_support::PathExt;
@@ -166,21 +156,12 @@ use core_test_support::responses::strip_metadata_from_items;
 use core_test_support::test_codex::local;
 use core_test_support::test_codex::test_codex;
 use core_test_support::test_path_buf;
-use core_test_support::tracing::install_test_tracing;
 use core_test_support::wait_for_event;
-use opentelemetry::trace::TraceContextExt;
-use opentelemetry::trace::TraceId;
-use opentelemetry_sdk::metrics::InMemoryMetricExporter;
-use opentelemetry_sdk::metrics::data::AggregatedMetrics;
-use opentelemetry_sdk::metrics::data::Metric;
-use opentelemetry_sdk::metrics::data::MetricData;
-use opentelemetry_sdk::metrics::data::ResourceMetrics;
 use std::path::Path;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 use tokio::time::sleep;
 use tokio::time::timeout;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use uuid::Uuid;
 
@@ -290,54 +271,6 @@ fn assistant_message(text: &str) -> ResponseItem {
     }
 }
 
-fn test_session_telemetry_without_metadata() -> SessionTelemetry {
-    let exporter = InMemoryMetricExporter::default();
-    let metrics = MetricsClient::new(
-        MetricsConfig::in_memory("test", "codex-core", env!("CARGO_PKG_VERSION"), exporter)
-            .with_runtime_reader(),
-    )
-    .expect("in-memory metrics client");
-    SessionTelemetry::new(
-        ThreadId::new(),
-        "gpt-5.4",
-        "gpt-5.4",
-        /*account_id*/ None,
-        /*account_email*/ None,
-        /*auth_mode*/ None,
-        "test_originator".to_string(),
-        /*log_user_prompts*/ false,
-        "tty".to_string(),
-        SessionSource::Cli,
-    )
-    .with_metrics_without_metadata_tags(metrics)
-}
-
-fn find_metric<'a>(resource_metrics: &'a ResourceMetrics, name: &str) -> &'a Metric {
-    for scope_metrics in resource_metrics.scope_metrics() {
-        for metric in scope_metrics.metrics() {
-            if metric.name() == name {
-                return metric;
-            }
-        }
-    }
-    panic!("metric {name} missing");
-}
-
-fn histogram_sum(resource_metrics: &ResourceMetrics, name: &str) -> u64 {
-    let metric = find_metric(resource_metrics, name);
-    match metric.data() {
-        AggregatedMetrics::F64(data) => match data {
-            MetricData::Histogram(histogram) => {
-                let points: Vec<_> = histogram.data_points().collect();
-                assert_eq!(points.len(), 1);
-                points[0].sum().round() as u64
-            }
-            _ => panic!("unexpected histogram aggregation"),
-        },
-        _ => panic!("unexpected metric data type"),
-    }
-}
-
 fn skill_message(text: &str) -> ResponseItem {
     ResponseItem::Message {
         id: None,
@@ -351,24 +284,9 @@ fn skill_message(text: &str) -> ResponseItem {
 }
 
 #[tokio::test]
-async fn regular_turn_emits_turn_started_with_trace_id_without_waiting_for_startup_prewarm() {
-    let _trace_test_context = install_test_tracing("codex-core-tests");
-    let request_parent = W3cTraceContext {
-        traceparent: Some("00-00000000000000000000000000000011-0000000000000022-01".into()),
-        tracestate: Some("vendor=value".into()),
-    };
-    let request_span = info_span!("app_server.request");
-    assert!(set_parent_from_w3c_trace_context(
-        &request_span,
-        &request_parent
-    ));
-    let (sess, tc, rx) = make_session_and_context_with_rx()
-        .instrument(request_span)
-        .await;
-    assert_eq!(
-        tc.trace_id.as_deref(),
-        Some("00000000000000000000000000000011")
-    );
+async fn regular_turn_emits_turn_started_without_waiting_for_startup_prewarm() {
+    let (sess, tc, rx) = make_session_and_context_with_rx().await;
+    assert_eq!(tc.trace_id, None);
     let (_tx, startup_prewarm_rx) = tokio::sync::oneshot::channel::<()>();
     let handle = tokio::spawn(async move {
         let _ = startup_prewarm_rx.await;
@@ -6363,124 +6281,8 @@ async fn request_permissions_is_auto_denied_when_granular_policy_blocks_tool_req
     );
 }
 
-#[tokio::test]
-async fn submit_with_id_captures_current_span_trace_context() {
-    let (_session, _turn_context) = make_session_and_context().await;
-    let (tx_sub, rx_sub) = async_channel::bounded(1);
-    let (_tx_event, rx_event) = async_channel::unbounded();
-    let io = SessionIo {
-        tx_sub,
-        rx_event,
-        agent_status: watch::channel(AgentStatus::PendingInit).1,
-        session_loop_termination: completed_session_loop_termination(),
-    };
-
-    let _trace_test_context = install_test_tracing("codex-core-tests");
-
-    let request_parent = W3cTraceContext {
-        traceparent: Some("00-00000000000000000000000000000011-0000000000000022-01".into()),
-        tracestate: Some("vendor=value".into()),
-    };
-    let request_span = info_span!("app_server.request");
-    assert!(set_parent_from_w3c_trace_context(
-        &request_span,
-        &request_parent
-    ));
-
-    let expected_trace = async {
-        let expected_trace =
-            current_span_w3c_trace_context().expect("current span should have trace context");
-        io.submit_with_id(Submission {
-            id: "sub-1".into(),
-            op: Op::Interrupt,
-            client_user_message_id: None,
-            trace: None,
-        })
-        .await
-        .expect("submit should succeed");
-        expected_trace
-    }
-    .instrument(request_span)
-    .await;
-
-    let submitted = rx_sub.recv().await.expect("submission");
-    assert_eq!(submitted.trace, Some(expected_trace));
-}
-
-#[tokio::test]
-async fn new_default_turn_captures_current_span_trace_id() {
-    let (session, _turn_context) = make_session_and_context().await;
-
-    let _trace_test_context = install_test_tracing("codex-core-tests");
-
-    let request_parent = W3cTraceContext {
-        traceparent: Some("00-00000000000000000000000000000011-0000000000000022-01".into()),
-        tracestate: Some("vendor=value".into()),
-    };
-    let request_span = info_span!("app_server.request");
-    assert!(set_parent_from_w3c_trace_context(
-        &request_span,
-        &request_parent
-    ));
-
-    let turn_trace_id = async {
-        let expected_trace_id = Span::current()
-            .context()
-            .span()
-            .span_context()
-            .trace_id()
-            .to_string();
-        let turn_context = session.new_default_turn().await;
-        assert_eq!(turn_context.trace_id, Some(expected_trace_id));
-        turn_context.trace_id.clone()
-    }
-    .instrument(request_span)
-    .await;
-
-    assert_eq!(
-        turn_trace_id.as_deref(),
-        Some("00000000000000000000000000000011")
-    );
-}
-
-#[test]
-fn submission_dispatch_span_prefers_submission_trace_context() {
-    let _trace_test_context = install_test_tracing("codex-core-tests");
-
-    let ambient_parent = W3cTraceContext {
-        traceparent: Some("00-00000000000000000000000000000033-0000000000000044-01".into()),
-        tracestate: None,
-    };
-    let ambient_span = info_span!("ambient");
-    assert!(set_parent_from_w3c_trace_context(
-        &ambient_span,
-        &ambient_parent
-    ));
-
-    let submission_trace = W3cTraceContext {
-        traceparent: Some("00-00000000000000000000000000000055-0000000000000066-01".into()),
-        tracestate: Some("vendor=value".into()),
-    };
-    let dispatch_span = ambient_span.in_scope(|| {
-        submission_dispatch_span(&Submission {
-            id: "sub-1".into(),
-            op: Op::Interrupt,
-            client_user_message_id: None,
-            trace: Some(submission_trace),
-        })
-    });
-
-    let trace_id = dispatch_span.context().span().span_context().trace_id();
-    assert_eq!(
-        trace_id,
-        TraceId::from_hex("00000000000000000000000000000055").expect("trace id")
-    );
-}
-
 #[test]
 fn submission_dispatch_span_uses_debug_for_realtime_audio() {
-    let _trace_test_context = install_test_tracing("codex-core-tests");
-
     let dispatch_span = submission_dispatch_span(&Submission {
         id: "sub-1".into(),
         op: Op::RealtimeConversationAudio(ConversationAudioParams {
@@ -6785,109 +6587,6 @@ async fn empty_turn_environments_clear_primary_environment() {
     let turn_cwd = turn_context.cwd.clone();
     assert_eq!(turn_cwd, session.get_config().await.cwd);
     assert_eq!(turn_context.config.cwd, session.get_config().await.cwd);
-}
-
-#[tokio::test]
-async fn spawn_task_turn_span_inherits_dispatch_trace_context() {
-    struct TraceCaptureTask {
-        captured_trace: Arc<std::sync::Mutex<Option<W3cTraceContext>>>,
-    }
-
-    impl SessionTask for TraceCaptureTask {
-        fn kind(&self) -> TaskKind {
-            TaskKind::Regular
-        }
-
-        fn span_name(&self) -> &'static str {
-            "session_task.trace_capture"
-        }
-
-        async fn run(
-            self: Arc<Self>,
-            _session: Arc<SessionTaskContext>,
-            _ctx: Arc<TurnContext>,
-            _input: Vec<TurnInput>,
-            _cancellation_token: CancellationToken,
-        ) -> SessionTaskResult {
-            let mut trace = self
-                .captured_trace
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            *trace = current_span_w3c_trace_context();
-            Ok(None)
-        }
-    }
-
-    let _trace_test_context = install_test_tracing("codex-core-tests");
-
-    let request_parent = W3cTraceContext {
-        traceparent: Some("00-00000000000000000000000000000011-0000000000000022-01".into()),
-        tracestate: Some("vendor=value".into()),
-    };
-    let request_span = tracing::info_span!("app_server.request");
-    assert!(set_parent_from_w3c_trace_context(
-        &request_span,
-        &request_parent
-    ));
-
-    let submission_trace =
-        async { current_span_w3c_trace_context().expect("request span should have trace context") }
-            .instrument(request_span)
-            .await;
-
-    let dispatch_span = submission_dispatch_span(&Submission {
-        id: "sub-1".into(),
-        op: Op::Interrupt,
-        client_user_message_id: None,
-        trace: Some(submission_trace.clone()),
-    });
-    let dispatch_span_id = dispatch_span.context().span().span_context().span_id();
-
-    let (sess, tc, rx) = make_session_and_context_with_rx().await;
-    let captured_trace = Arc::new(std::sync::Mutex::new(None));
-
-    async {
-        sess.spawn_task(
-            Arc::clone(&tc),
-            vec![TurnInput::UserInput {
-                content: vec![UserInput::Text {
-                    text: "hello".to_string(),
-                    text_elements: Vec::new(),
-                }],
-                client_id: None,
-            }],
-            TraceCaptureTask {
-                captured_trace: Arc::clone(&captured_trace),
-            },
-        )
-        .await;
-    }
-    .instrument(dispatch_span)
-    .await;
-
-    let evt = tokio::time::timeout(StdDuration::from_secs(2), rx.recv())
-        .await
-        .expect("timeout waiting for turn completion")
-        .expect("event");
-    assert!(matches!(evt.msg, EventMsg::TurnComplete(_)));
-
-    let task_trace = captured_trace
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
-        .expect("turn task should capture the current span trace context");
-    let submission_context =
-        codex_otel::context_from_w3c_trace_context(&submission_trace).expect("submission");
-    let task_context = codex_otel::context_from_w3c_trace_context(&task_trace).expect("task trace");
-
-    assert_eq!(
-        task_context.span().span_context().trace_id(),
-        submission_context.span().span_context().trace_id()
-    );
-    assert_ne!(
-        task_context.span().span_context().span_id(),
-        dispatch_span_id
-    );
 }
 
 #[cfg(debug_assertions)]
@@ -8583,108 +8282,6 @@ async fn build_initial_context_trims_skill_metadata_from_context_window_budget()
             .iter()
             .all(|text| !text.contains("- admin-skill:") && !text.contains("- repo-skill:")),
         "expected no skill metadata entries to fit the tiny budget, got {developer_texts:?}"
-    );
-}
-
-#[test]
-fn emit_thread_start_skill_metrics_records_enabled_kept_and_truncated_values() {
-    let session_telemetry = test_session_telemetry_without_metadata();
-    let mut outcome = SkillLoadOutcome::default();
-    outcome.skills = vec![SkillMetadata {
-        name: "repo-skill".to_string(),
-        description: "desc".to_string(),
-        short_description: None,
-        interface: None,
-        dependencies: None,
-        policy: None,
-        path_to_skills_md: test_path_buf("/tmp/repo-skill/SKILL.md").abs(),
-        scope: SkillScope::Repo,
-        plugin_id: None,
-    }];
-    let rendered = build_available_skills(
-        &outcome,
-        SkillMetadataBudget::Characters(1),
-        SkillRenderSideEffects::ThreadStart {
-            session_telemetry: &session_telemetry,
-        },
-    )
-    .expect("skills should render");
-
-    assert_eq!(
-        rendered.warning_message,
-        Some(
-            "Exceeded skills context budget. All skill descriptions were removed and 1 additional skill was not included in the model-visible skills list."
-                .to_string()
-        )
-    );
-    let snapshot = session_telemetry
-        .snapshot_metrics()
-        .expect("runtime metrics snapshot");
-    assert_eq!(
-        histogram_sum(&snapshot, THREAD_SKILLS_ENABLED_TOTAL_METRIC),
-        1
-    );
-    assert_eq!(histogram_sum(&snapshot, THREAD_SKILLS_KEPT_TOTAL_METRIC), 0);
-    assert_eq!(histogram_sum(&snapshot, THREAD_SKILLS_TRUNCATED_METRIC), 1);
-    assert_eq!(
-        histogram_sum(&snapshot, THREAD_SKILLS_DESCRIPTION_TRUNCATED_CHARS_METRIC),
-        4
-    );
-}
-
-#[test]
-fn emit_thread_start_skill_metrics_records_description_truncated_chars_without_omitted_skills() {
-    let session_telemetry = test_session_telemetry_without_metadata();
-    let alpha = SkillMetadata {
-        name: "alpha-skill".to_string(),
-        description: "abcdef".to_string(),
-        short_description: None,
-        interface: None,
-        dependencies: None,
-        policy: None,
-        path_to_skills_md: test_path_buf("/tmp/alpha-skill/SKILL.md").abs(),
-        scope: SkillScope::Repo,
-        plugin_id: None,
-    };
-    let beta = SkillMetadata {
-        name: "beta-skill".to_string(),
-        description: "uvwxyz".to_string(),
-        short_description: None,
-        interface: None,
-        dependencies: None,
-        policy: None,
-        path_to_skills_md: test_path_buf("/tmp/beta-skill/SKILL.md").abs(),
-        scope: SkillScope::Repo,
-        plugin_id: None,
-    };
-    let minimum_skill_line_cost = |skill: &SkillMetadata| {
-        let path = skill.path_to_skills_md.to_string_lossy().replace('\\', "/");
-        format!("- {}: (file: {})\n", skill.name, path)
-            .chars()
-            .count()
-    };
-    let minimum_budget = minimum_skill_line_cost(&alpha) + minimum_skill_line_cost(&beta);
-    let mut outcome = SkillLoadOutcome::default();
-    outcome.skills = vec![alpha, beta];
-
-    let rendered = build_available_skills(
-        &outcome,
-        SkillMetadataBudget::Characters(minimum_budget + 6),
-        SkillRenderSideEffects::ThreadStart {
-            session_telemetry: &session_telemetry,
-        },
-    )
-    .expect("skills should render");
-
-    assert_eq!(rendered.report.omitted_count, 0);
-    assert_eq!(rendered.report.truncated_description_chars, 8);
-    let snapshot = session_telemetry
-        .snapshot_metrics()
-        .expect("runtime metrics snapshot");
-    assert_eq!(histogram_sum(&snapshot, THREAD_SKILLS_TRUNCATED_METRIC), 0);
-    assert_eq!(
-        histogram_sum(&snapshot, THREAD_SKILLS_DESCRIPTION_TRUNCATED_CHARS_METRIC),
-        8
     );
 }
 

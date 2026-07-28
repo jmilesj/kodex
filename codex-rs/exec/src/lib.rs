@@ -161,7 +161,7 @@ use crate::cli::Command as ExecCommand;
 use crate::event_processor::EventProcessor;
 
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
-const EXEC_DEFAULT_LOG_FILTER: &str = "error,opentelemetry_sdk=off,opentelemetry_otlp=off";
+const EXEC_DEFAULT_LOG_FILTER: &str = "error";
 
 enum InitialOperation {
     UserTurn {

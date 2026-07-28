@@ -1,12 +1,9 @@
 #![allow(clippy::unwrap_used)]
-use codex_api::WS_REQUEST_HEADER_TRACEPARENT_CLIENT_METADATA_KEY;
-use codex_api::WS_REQUEST_HEADER_TRACESTATE_CLIENT_METADATA_KEY;
 use codex_core::CodexResponsesMetadata;
 use codex_core::ModelClient;
 use codex_core::ModelClientSession;
 use codex_core::Prompt;
 use codex_core::ResponseEvent;
-use codex_core::X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER;
 use codex_features::Feature;
 use codex_http_client::OutboundProxyPolicy;
 use codex_login::CodexAuth;
@@ -17,7 +14,6 @@ use codex_otel::MetricsClient;
 use codex_otel::MetricsConfig;
 use codex_otel::SessionTelemetry;
 use codex_otel::TelemetryAuthMode;
-use codex_otel::current_span_w3c_trace_context;
 use codex_protocol::ResponseItemId;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
@@ -32,7 +28,6 @@ use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionSource;
-use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::user_input::UserInput;
 use codex_rollout_trace::ConversationPart;
 use codex_rollout_trace::InferenceTraceContext;
@@ -51,17 +46,13 @@ use core_test_support::responses::start_websocket_server_with_headers;
 use core_test_support::responses_metadata as test_responses_metadata;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::test_codex;
-use core_test_support::tracing::install_test_tracing;
 use core_test_support::wait_for_event;
 use futures::StreamExt;
-use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
-use tracing::Instrument;
-use tracing_test::traced_test;
 
 const MODEL: &str = "gpt-5.4";
 const OPENAI_BETA_HEADER: &str = "OpenAI-Beta";
@@ -74,32 +65,6 @@ const TEST_INSTALLATION_ID: &str = "11111111-1111-4111-8111-111111111111";
 const TEST_WINDOW_ID: &str = "test-thread:0";
 const X_CODEX_WS_STREAM_REQUEST_START_MS_CLIENT_METADATA_KEY: &str =
     "x-codex-ws-stream-request-start-ms";
-
-fn assert_request_trace_matches(body: &serde_json::Value, expected_trace: &W3cTraceContext) {
-    let client_metadata = body["client_metadata"]
-        .as_object()
-        .expect("missing client_metadata payload");
-    let actual_traceparent = client_metadata
-        .get(WS_REQUEST_HEADER_TRACEPARENT_CLIENT_METADATA_KEY)
-        .and_then(serde_json::Value::as_str)
-        .expect("missing traceparent");
-    let expected_traceparent = expected_trace
-        .traceparent
-        .as_deref()
-        .expect("missing expected traceparent");
-
-    assert_eq!(actual_traceparent, expected_traceparent);
-    assert_eq!(
-        client_metadata
-            .get(WS_REQUEST_HEADER_TRACESTATE_CLIENT_METADATA_KEY)
-            .and_then(serde_json::Value::as_str),
-        expected_trace.tracestate.as_deref()
-    );
-    assert!(
-        body.get("trace").is_none(),
-        "top-level trace should not be sent"
-    );
-}
 
 struct WebsocketTestHarness {
     _codex_home: TempDir,
@@ -314,117 +279,6 @@ async fn responses_websocket_streams_with_system_proxy_feature() {
 
     assert_eq!(server.handshakes().len(), 1);
     assert_eq!(server.single_connection().len(), 1);
-
-    server.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn responses_websocket_reuses_connection_with_per_turn_trace_payloads() {
-    skip_if_no_network!();
-
-    let _trace_test_context = install_test_tracing("client-websocket-test");
-
-    let server = start_websocket_server(vec![vec![
-        vec![ev_response_created("resp-1"), ev_completed("resp-1")],
-        vec![ev_response_created("resp-2"), ev_completed("resp-2")],
-    ]])
-    .await;
-
-    let harness = websocket_harness(&server).await;
-    let prompt_one = prompt_with_input(vec![message_item("hello")]);
-    let prompt_two = prompt_with_input(vec![message_item("again")]);
-
-    let first_trace = {
-        let mut client_session = harness.client.new_session();
-        async {
-            let expected_trace =
-                current_span_w3c_trace_context().expect("current span should have trace context");
-            stream_until_complete(&mut client_session, &harness, &prompt_one).await;
-            expected_trace
-        }
-        .instrument(tracing::info_span!("client.websocket.turn_one"))
-        .await
-    };
-
-    let second_trace = {
-        let mut client_session = harness.client.new_session();
-        async {
-            let expected_trace =
-                current_span_w3c_trace_context().expect("current span should have trace context");
-            stream_until_complete(&mut client_session, &harness, &prompt_two).await;
-            expected_trace
-        }
-        .instrument(tracing::info_span!("client.websocket.turn_two"))
-        .await
-    };
-
-    assert_eq!(server.handshakes().len(), 1);
-    assert_eq!(
-        server.single_handshake().header(USER_AGENT_HEADER),
-        Some(codex_login::default_client::get_codex_user_agent())
-    );
-    let connection = server.single_connection();
-    assert_eq!(connection.len(), 2);
-
-    let first_request = connection
-        .first()
-        .expect("missing first request")
-        .body_json();
-    let second_request = connection
-        .get(1)
-        .expect("missing second request")
-        .body_json();
-    assert_request_trace_matches(&first_request, &first_trace);
-    assert_request_trace_matches(&second_request, &second_trace);
-
-    let first_traceparent = first_request["client_metadata"]
-        [WS_REQUEST_HEADER_TRACEPARENT_CLIENT_METADATA_KEY]
-        .as_str()
-        .expect("missing first traceparent");
-    let second_traceparent = second_request["client_metadata"]
-        [WS_REQUEST_HEADER_TRACEPARENT_CLIENT_METADATA_KEY]
-        .as_str()
-        .expect("missing second traceparent");
-    assert_ne!(first_traceparent, second_traceparent);
-
-    server.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn responses_websocket_preconnect_does_not_replace_turn_trace_payload() {
-    skip_if_no_network!();
-
-    let _trace_test_context = install_test_tracing("client-websocket-test");
-
-    let server = start_websocket_server(vec![vec![vec![
-        ev_response_created("resp-1"),
-        ev_completed("resp-1"),
-    ]]])
-    .await;
-
-    let harness = websocket_harness(&server).await;
-    let mut client_session = harness.client.new_session();
-    let responses_metadata = websocket_connection_metadata(&harness);
-    client_session
-        .preconnect_websocket(&harness.session_telemetry, &responses_metadata)
-        .await
-        .expect("websocket preconnect failed");
-    let prompt = prompt_with_input(vec![message_item("hello")]);
-
-    let expected_trace = async {
-        let expected_trace =
-            current_span_w3c_trace_context().expect("current span should have trace context");
-        stream_until_complete(&mut client_session, &harness, &prompt).await;
-        expected_trace
-    }
-    .instrument(tracing::info_span!("client.websocket.request"))
-    .await;
-
-    assert_eq!(server.handshakes().len(), 1);
-    let connection = server.single_connection();
-    assert_eq!(connection.len(), 1);
-    let request = connection.first().expect("missing request").body_json();
-    assert_request_trace_matches(&request, &expected_trace);
 
     server.shutdown().await;
 }
@@ -1211,114 +1065,6 @@ async fn responses_websocket_v2_wins_when_both_features_enabled() {
             .map(str::trim)
             .any(|value| value == WS_V2_BETA_HEADER_VALUE)
     );
-    server.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[traced_test]
-async fn responses_websocket_emits_websocket_telemetry_events() {
-    skip_if_no_network!();
-
-    let server = start_websocket_server(vec![vec![vec![
-        ev_response_created("resp-1"),
-        ev_completed("resp-1"),
-    ]]])
-    .await;
-
-    let harness = websocket_harness(&server).await;
-    harness.session_telemetry.reset_runtime_metrics();
-    let mut client_session = harness.client.new_session();
-    let prompt = prompt_with_input(vec![message_item("hello")]);
-
-    stream_until_complete(&mut client_session, &harness, &prompt).await;
-
-    tokio::time::sleep(Duration::from_millis(10)).await;
-
-    let summary = harness
-        .session_telemetry
-        .runtime_metrics_summary()
-        .expect("runtime metrics summary");
-    assert_eq!(summary.api_calls.count, 0);
-    assert_eq!(summary.streaming_events.count, 0);
-    assert_eq!(summary.websocket_calls.count, 1);
-    assert_eq!(summary.websocket_events.count, 2);
-
-    server.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn responses_websocket_includes_timing_metrics_header_when_runtime_metrics_enabled() {
-    skip_if_no_network!();
-
-    let server = start_websocket_server(vec![vec![vec![
-        ev_response_created("resp-1"),
-        serde_json::json!({
-            "type": "responsesapi.websocket_timing",
-            "timing_metrics": {
-                "responses_duration_excl_engine_and_client_tool_time_ms": 120,
-                "engine_service_total_ms": 450,
-                "engine_iapi_ttft_total_ms": 310,
-                "engine_service_ttft_total_ms": 340,
-                "engine_iapi_tbt_across_engine_calls_ms": 220,
-                "engine_service_tbt_across_engine_calls_ms": 260
-            }
-        }),
-        ev_completed("resp-1"),
-    ]]])
-    .await;
-
-    let harness =
-        websocket_harness_with_runtime_metrics(&server, /*runtime_metrics_enabled*/ true).await;
-    harness.session_telemetry.reset_runtime_metrics();
-    let mut client_session = harness.client.new_session();
-    let prompt = prompt_with_input(vec![message_item("hello")]);
-
-    stream_until_complete(&mut client_session, &harness, &prompt).await;
-    tokio::time::sleep(Duration::from_millis(10)).await;
-
-    let handshake = server.single_handshake();
-    assert_eq!(
-        handshake.header(X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER),
-        Some("true".to_string())
-    );
-
-    let summary = harness
-        .session_telemetry
-        .runtime_metrics_summary()
-        .expect("runtime metrics summary");
-    assert_eq!(summary.responses_api_overhead_ms, 120);
-    assert_eq!(summary.responses_api_inference_time_ms, 450);
-    assert_eq!(summary.responses_api_engine_iapi_ttft_ms, 310);
-    assert_eq!(summary.responses_api_engine_service_ttft_ms, 340);
-    assert_eq!(summary.responses_api_engine_iapi_tbt_ms, 220.0);
-    assert_eq!(summary.responses_api_engine_service_tbt_ms, 260.0);
-
-    server.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn responses_websocket_omits_timing_metrics_header_when_runtime_metrics_disabled() {
-    skip_if_no_network!();
-
-    let server = start_websocket_server(vec![vec![vec![
-        ev_response_created("resp-1"),
-        ev_completed("resp-1"),
-    ]]])
-    .await;
-
-    let harness =
-        websocket_harness_with_runtime_metrics(&server, /*runtime_metrics_enabled*/ false).await;
-    let mut client_session = harness.client.new_session();
-    let prompt = prompt_with_input(vec![message_item("hello")]);
-
-    stream_until_complete(&mut client_session, &harness, &prompt).await;
-
-    let handshake = server.single_handshake();
-    assert_eq!(
-        handshake.header(X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER),
-        None
-    );
-
     server.shutdown().await;
 }
 
@@ -2357,9 +2103,8 @@ async fn websocket_harness_with_provider_options(
     let session_id = SessionId::new();
     let auth_manager =
         codex_core::test_support::auth_manager_from_auth(CodexAuth::from_api_key("Test API Key"));
-    let exporter = InMemoryMetricExporter::default();
     let metrics = MetricsClient::new(
-        MetricsConfig::in_memory("test", "codex-core", env!("CARGO_PKG_VERSION"), exporter)
+        MetricsConfig::in_memory("test", "codex-core", env!("CARGO_PKG_VERSION"), ())
             .with_runtime_reader(),
     )
     .expect("in-memory metrics client");

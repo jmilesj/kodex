@@ -317,7 +317,6 @@ fn run_setup_refresh_inner(
         deny_write_paths,
         proxy_ports: offline_proxy_settings.proxy_ports,
         allow_local_binding: offline_proxy_settings.allow_local_binding,
-        otel: None,
         real_user: std::env::var("USERNAME").unwrap_or_else(|_| "Administrators".to_string()),
         mode: SetupMode::Full,
         refresh_only: true,
@@ -646,7 +645,6 @@ struct ElevationPayload {
     proxy_ports: Vec<u16>,
     #[serde(default)]
     allow_local_binding: bool,
-    otel: Option<codex_otel::StatsigMetricsSettings>,
     real_user: String,
     mode: SetupMode,
     #[serde(default)]
@@ -1018,7 +1016,6 @@ fn run_elevated_setup_inner(
         proxy_ports: offline_proxy_settings.proxy_ports,
         allow_local_binding: offline_proxy_settings.allow_local_binding,
         real_user: std::env::var("USERNAME").unwrap_or_else(|_| "Administrators".to_string()),
-        otel: codex_otel::global_statsig_metrics_settings(),
         mode: SetupMode::Full,
         refresh_only: false,
     };
@@ -1062,7 +1059,6 @@ pub fn run_elevated_provisioning_setup(codex_home: &Path, real_user: &str) -> Re
         deny_write_paths: Vec::new(),
         proxy_ports: Vec::new(),
         allow_local_binding: false,
-        otel: codex_otel::global_statsig_metrics_settings(),
         real_user: real_user.to_string(),
         mode: SetupMode::ProvisionOnly,
         refresh_only: false,

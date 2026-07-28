@@ -122,8 +122,6 @@ codex-utils-cargo-bin = { workspace = true }
 core_test_support = { workspace = true }
 flate2 = { workspace = true }
 hmac = { workspace = true }
-opentelemetry = { workspace = true }
-opentelemetry_sdk = { workspace = true }
 pretty_assertions = { workspace = true }
 reqwest = { workspace = true, features = ["rustls-tls"] }
 rmcp = { workspace = true, default-features = false, features = [
@@ -136,6 +134,5 @@ sha2 = { workspace = true }
 shlex = { workspace = true }
 tar = { workspace = true }
 tokio-tungstenite = { workspace = true }
-tracing-opentelemetry = { workspace = true }
 url = { workspace = true }
 wiremock = { workspace = true }

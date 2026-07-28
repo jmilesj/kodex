@@ -1,14 +1,11 @@
-// Analytics export is disabled in this fork. Keep the event and reducer types
-// available for compile-time compatibility with the rest of the workspace.
+// Analytics export is disabled in this fork. Keep event and fact types available
+// for compile-time compatibility with the rest of the workspace.
 #![allow(dead_code)]
 
 mod accepted_lines;
-#[cfg(debug_assertions)]
-mod analytics_capture;
 mod client;
 mod events;
 mod facts;
-mod reducer;
 
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -64,9 +61,6 @@ pub use facts::TurnSteerRequestError;
 pub use facts::TurnSteerResult;
 pub use facts::TurnTokenUsageFact;
 pub use facts::build_track_events_context;
-
-#[cfg(test)]
-mod analytics_client_tests;
 
 pub fn now_unix_seconds() -> u64 {
     SystemTime::now()

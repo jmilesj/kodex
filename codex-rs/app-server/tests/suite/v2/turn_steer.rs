@@ -2,11 +2,13 @@
 
 use anyhow::Context;
 use anyhow::Result;
+use app_test_support::ChatGptAuthFixture;
 use app_test_support::TestAppServer;
 use app_test_support::create_mock_responses_server_sequence;
 use app_test_support::create_mock_responses_server_sequence_unchecked;
 use app_test_support::create_shell_command_sse_response;
 use app_test_support::to_response;
+use app_test_support::write_chatgpt_auth;
 use app_test_support::write_mock_responses_config_toml_with_chatgpt_base_url;
 use codex_app_server::INPUT_TOO_LARGE_ERROR_CODE;
 use codex_app_server::INVALID_PARAMS_ERROR_CODE;
@@ -25,6 +27,7 @@ use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerParams;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput as V2UserInput;
+use codex_config::types::AuthCredentialsStoreMode;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use core_test_support::skip_if_remote;
 use serde_json::Value;
@@ -50,7 +53,14 @@ async fn turn_steer_requires_active_turn() -> Result<()> {
         &server.uri(),
         &server.uri(),
     )?;
-    mount_analytics_capture(&server, &codex_home).await?;
+    write_chatgpt_auth(
+        &codex_home,
+        ChatGptAuthFixture::new("chatgpt-token")
+            .account_id("account-123")
+            .chatgpt_user_id("user-123")
+            .chatgpt_account_id("account-123"),
+        AuthCredentialsStoreMode::File,
+    )?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(&codex_home)
@@ -146,7 +156,14 @@ async fn turn_steer_rejects_oversized_text_input() -> Result<()> {
         &server.uri(),
         &server.uri(),
     )?;
-    mount_analytics_capture(&server, &codex_home).await?;
+    write_chatgpt_auth(
+        &codex_home,
+        ChatGptAuthFixture::new("chatgpt-token")
+            .account_id("account-123")
+            .chatgpt_user_id("user-123")
+            .chatgpt_account_id("account-123"),
+        AuthCredentialsStoreMode::File,
+    )?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(&codex_home)

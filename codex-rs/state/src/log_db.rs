@@ -209,17 +209,6 @@ where
             return;
         }
 
-        // The SDK emits DEBUG timer meta-events every second per process; these
-        // were over 30% of retained logs in measured high-fanout Codex environments.
-        if metadata.target() == "opentelemetry_sdk"
-            && matches!(
-                *metadata.level(),
-                tracing::Level::TRACE | tracing::Level::DEBUG
-            )
-        {
-            return;
-        }
-
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
         let thread_id = visitor

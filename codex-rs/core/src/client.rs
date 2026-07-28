@@ -146,8 +146,6 @@ pub const X_CODEX_PARENT_THREAD_ID_HEADER: &str = "x-codex-parent-thread-id";
 pub const X_CODEX_WINDOW_ID_HEADER: &str = "x-codex-window-id";
 pub const X_OPENAI_MEMGEN_REQUEST_HEADER: &str = "x-openai-memgen-request";
 pub const X_OPENAI_SUBAGENT_HEADER: &str = "x-openai-subagent";
-pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =
-    "x-responsesapi-include-timing-metrics";
 const X_CODEX_WS_STREAM_REQUEST_START_MS_CLIENT_METADATA_KEY: &str =
     "x-codex-ws-stream-request-start-ms";
 const WS_REQUEST_HEADER_RESPONSES_LITE_CLIENT_METADATA_KEY: &str =
@@ -205,7 +203,6 @@ struct ModelClientState {
     originator: String,
     model_verbosity: Option<VerbosityConfig>,
     enable_request_compression: bool,
-    include_timing_metrics: bool,
     beta_features_header: Option<String>,
     item_ids_enabled: bool,
     concurrent_reasoning_summaries_enabled: bool,
@@ -419,7 +416,7 @@ impl ModelClient {
         originator: String,
         model_verbosity: Option<VerbosityConfig>,
         enable_request_compression: bool,
-        include_timing_metrics: bool,
+        _include_timing_metrics: bool,
         beta_features_header: Option<String>,
         item_ids_enabled: bool,
         concurrent_reasoning_summaries_enabled: bool,
@@ -443,7 +440,6 @@ impl ModelClient {
                 originator,
                 model_verbosity,
                 enable_request_compression,
-                include_timing_metrics,
                 beta_features_header,
                 item_ids_enabled,
                 concurrent_reasoning_summaries_enabled,
@@ -1094,12 +1090,6 @@ impl ModelClient {
             OPENAI_BETA_HEADER,
             HeaderValue::from_static(RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE),
         );
-        if self.state.include_timing_metrics {
-            headers.insert(
-                X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER,
-                HeaderValue::from_static("true"),
-            );
-        }
         headers
     }
 }
