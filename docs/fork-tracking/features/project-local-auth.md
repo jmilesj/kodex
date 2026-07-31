@@ -85,7 +85,7 @@ Manual checks:
 
 ## Last Verified
 
-Upstream tag `rust-v0.145.0`, peeled commit `25af12f7e6`.
+Upstream tag `rust-v0.146.0`, peeled commit `e363b08c91`.
 
 ## Retirement Condition
 

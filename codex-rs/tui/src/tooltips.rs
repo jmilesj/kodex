@@ -3,16 +3,13 @@ use codex_protocol::account::PlanType;
 use lazy_static::lazy_static;
 use rand::Rng;
 
-const ANNOUNCEMENT_TIP_URL: &str =
-    "https://raw.githubusercontent.com/openai/codex/main/announcement_tip.toml";
-
 const IS_MACOS: bool = cfg!(target_os = "macos");
 const IS_WINDOWS: bool = cfg!(target_os = "windows");
 
-const APP_TOOLTIP: &str = "Try the **Desktop app**. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true";
+const APP_TOOLTIP: &str = "Try the **Desktop app**. Run 'kodex app' or visit https://chatgpt.com/codex?app-landing-page=true";
 const FAST_TOOLTIP: &str =
     "*New* Use **/fast** to enable our fastest inference with increased plan usage.";
-const OTHER_TOOLTIP: &str = "*New* Build faster with the **Desktop app**. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true";
+const OTHER_TOOLTIP: &str = "*New* Build faster with the **Desktop app**. Run 'kodex app' or visit https://chatgpt.com/codex?app-landing-page=true";
 const OTHER_TOOLTIP_NON_MAC: &str = "*New* Build faster with Codex.";
 const FREE_GO_TOOLTIP: &str =
     "*New* For a limited time, Codex is included in your plan for free – let’s build together.";
@@ -27,7 +24,7 @@ lazy_static! {
             if line.is_empty() || line.starts_with('#') {
                 return false;
             }
-            if !IS_MACOS && !IS_WINDOWS && line.contains("codex app") {
+            if !IS_MACOS && !IS_WINDOWS && line.contains("kodex app") {
                 return false;
             }
             true
@@ -51,10 +48,6 @@ fn experimental_tooltips() -> Vec<&'static str> {
 /// Pick a random tooltip to show to the user when starting Codex.
 pub(crate) fn get_tooltip(plan: Option<PlanType>, fast_mode_enabled: bool) -> Option<String> {
     let mut rng = rand::rng();
-
-    if let Some(announcement) = announcement::fetch_announcement_tip(plan) {
-        return Some(announcement);
-    }
 
     // Leave small chance for a random tooltip to be shown.
     if rng.random_ratio(8, 10) {
@@ -120,34 +113,16 @@ fn pick_tooltip<R: Rng + ?Sized>(rng: &mut R) -> Option<&'static str> {
     }
 }
 
+#[cfg(test)]
 pub(crate) mod announcement {
-    use crate::tooltips::ANNOUNCEMENT_TIP_URL;
     use crate::version::CODEX_CLI_VERSION;
     use chrono::NaiveDate;
     use chrono::Utc;
     use codex_protocol::account::PlanType;
     use regex_lite::Regex;
     use serde::Deserialize;
-    use std::sync::OnceLock;
-    use std::thread;
-    use std::time::Duration;
 
-    static ANNOUNCEMENT_TIP: OnceLock<Option<String>> = OnceLock::new();
     const CURRENT_OS: TargetOs = TargetOs::current();
-
-    /// Prewarm the cache of the announcement tip.
-    pub(crate) fn prewarm() {
-        let _ = thread::spawn(|| ANNOUNCEMENT_TIP.get_or_init(init_announcement_tip_in_thread));
-    }
-
-    /// Fetch the announcement tip, return None if the prewarm is not done yet.
-    pub(crate) fn fetch_announcement_tip(plan: Option<PlanType>) -> Option<String> {
-        ANNOUNCEMENT_TIP
-            .get()
-            .cloned()
-            .flatten()
-            .and_then(|raw| parse_announcement_tip_toml(&raw, plan))
-    }
 
     #[derive(Debug, Deserialize)]
     struct AnnouncementTipRaw {
@@ -197,27 +172,6 @@ pub(crate) mod announcement {
                 Self::Linux
             }
         }
-    }
-
-    fn init_announcement_tip_in_thread() -> Option<String> {
-        thread::spawn(blocking_init_announcement_tip)
-            .join()
-            .ok()
-            .flatten()
-    }
-
-    fn blocking_init_announcement_tip() -> Option<String> {
-        // Avoid system proxy detection to prevent macOS system-configuration panics (#8912).
-        let client = reqwest::blocking::Client::builder()
-            .no_proxy()
-            .build()
-            .ok()?;
-        let response = client
-            .get(ANNOUNCEMENT_TIP_URL)
-            .timeout(Duration::from_millis(2000))
-            .send()
-            .ok()?;
-        response.error_for_status().ok()?.text().ok()
     }
 
     pub(crate) fn parse_announcement_tip_toml(

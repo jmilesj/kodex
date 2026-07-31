@@ -49,7 +49,7 @@ use codex_login::CODEX_ACCESS_TOKEN_ENV_VAR;
 use codex_login::CODEX_API_KEY_ENV_VAR;
 use codex_login::CodexAuth;
 use codex_login::OPENAI_API_KEY_ENV_VAR;
-use codex_login::default_client::build_reqwest_client;
+use codex_login::default_client::create_client_without_request_logging;
 use codex_login::default_client::default_headers;
 use codex_login::load_auth_dot_json;
 use codex_model_provider::create_model_provider;
@@ -813,14 +813,14 @@ fn installation_check(show_details: bool) -> DoctorCheck {
     let mut remediation = None;
 
     if path_entries.len() > 1 {
-        details.push(format!("PATH codex entries: {}", path_entries.len()));
+        details.push(format!("PATH kodex entries: {}", path_entries.len()));
     }
     if show_details || path_entries.len() > 1 {
         details.extend(
             path_entries
                 .iter()
                 .enumerate()
-                .map(|(index, path)| format!("PATH codex #{}: {path}", index + 1)),
+                .map(|(index, path)| format!("PATH kodex #{}: {path}", index + 1)),
         );
     }
 
@@ -834,8 +834,7 @@ fn installation_check(show_details: bool) -> DoctorCheck {
                 npm_package_root,
             } => {
                 status = CheckStatus::Fail;
-                summary =
-                    "npm install -g @openai/codex would update a different install".to_string();
+                summary = "npm install -g kodex would update a different install".to_string();
                 remediation = Some(format!(
                     "Fix PATH or npm prefix so the running package root ({}) matches the npm global package root ({}).",
                     running_package_root.display(),
@@ -851,7 +850,7 @@ fn installation_check(show_details: bool) -> DoctorCheck {
                 status = status.max(CheckStatus::Warning);
                 summary = "npm-managed launch is missing package-root provenance".to_string();
                 remediation = Some(
-                    "Reinstall or update Codex so the JS shim provides CODEX_MANAGED_PACKAGE_ROOT."
+                    "Reinstall or update Kodex so the JS shim provides CODEX_MANAGED_PACKAGE_ROOT."
                         .to_string(),
                 );
             }
@@ -1008,7 +1007,7 @@ fn npm_global_root_check() -> NpmRootCheck {
 }
 
 fn compare_npm_package_roots(running_package_root: &Path, npm_root: &Path) -> NpmRootCheck {
-    let npm_package_root = npm_root.join("@openai").join("codex");
+    let npm_package_root = npm_root.join("kodex");
     let running = normalize_path_for_compare(running_package_root);
     let target = normalize_path_for_compare(&npm_package_root);
     if running == target {
@@ -1047,9 +1046,9 @@ fn display_list<T: AsRef<str>>(items: &[T]) -> String {
 
 fn codex_path_entries() -> Vec<String> {
     #[cfg(windows)]
-    let result = run_command("where", ["codex"]);
+    let result = run_command("where", ["kodex"]);
     #[cfg(not(windows))]
-    let result = run_command("which", ["-a", "codex"]);
+    let result = run_command("which", ["-a", "kodex"]);
 
     result
         .unwrap_or_default()
@@ -1089,7 +1088,10 @@ fn config_check(config: &Config) -> DoctorCheck {
     ));
     details.push(format!("model provider: {}", config.model_provider_id));
     details.push(format!("log dir: {}", config.log_dir.display()));
-    details.push(format!("sqlite home: {}", config.sqlite_home.display()));
+    details.push(format!(
+        "sqlite home: {}",
+        config.sqlite_config().home().display()
+    ));
     details.push(format!("mcp servers: {}", config.mcp_servers.get().len()));
     feature_flag_details(config, &mut details);
     config_toml_details(config, &mut details);
@@ -2163,11 +2165,18 @@ async fn state_check(config: &Config) -> DoctorCheck {
     let mut details = Vec::new();
     path_readiness(&mut details, "CODEX_HOME", &config.codex_home);
     path_readiness(&mut details, "log dir", &config.log_dir);
-    path_readiness(&mut details, "sqlite home", &config.sqlite_home);
+    path_readiness(&mut details, "sqlite home", config.sqlite_config().home());
     let mut integrity_failures = Vec::new();
-    for db in codex_state::runtime_db_paths(&config.sqlite_home) {
+    for db in config.sqlite_config().runtime_db_paths() {
         path_readiness(&mut details, db.label, &db.path);
-        sqlite_integrity_detail(&mut details, &mut integrity_failures, db.label, &db.path).await;
+        sqlite_integrity_detail(
+            config.sqlite_config(),
+            &mut details,
+            &mut integrity_failures,
+            db.label,
+            &db.path,
+        )
+        .await;
     }
     rollout_stats_details(&mut details, &config.codex_home);
     standalone_release_cache_details(&mut details);
@@ -2192,6 +2201,7 @@ async fn state_check(config: &Config) -> DoctorCheck {
 }
 
 async fn sqlite_integrity_detail(
+    sqlite: &codex_state::SqliteConfig,
     details: &mut Vec<String>,
     integrity_failures: &mut Vec<String>,
     label: &str,
@@ -2202,7 +2212,7 @@ async fn sqlite_integrity_detail(
         return;
     }
 
-    match codex_state::sqlite_integrity_check(path).await {
+    match codex_state::sqlite_integrity_check(sqlite, path).await {
         Ok(rows) if rows.iter().all(|row| row == "ok") => {
             details.push(format!("{label} integrity: ok"));
         }
@@ -2885,7 +2895,7 @@ async fn mcp_http_probe_url_with_timeout(url: &str, timeout: Duration) -> Result
 }
 
 async fn http_probe_url_with_timeout(url: &str, timeout: Duration) -> Result<String, String> {
-    let response = build_reqwest_client()
+    let response = create_client_without_request_logging()
         .head(url)
         .timeout(timeout)
         .send()
@@ -2911,7 +2921,7 @@ async fn http_get_probe_url_with_timeout(url: &str, timeout: Duration) -> Result
 }
 
 async fn http_get_probe_status_with_timeout(url: &str, timeout: Duration) -> Result<u16, String> {
-    let response = build_reqwest_client()
+    let response = create_client_without_request_logging()
         .get(url)
         .timeout(timeout)
         .send()
@@ -3190,25 +3200,25 @@ mod tests {
 
     #[test]
     fn compare_npm_package_roots_detects_match() {
-        let running = PathBuf::from("/prefix/lib/node_modules/@openai/codex");
+        let running = PathBuf::from("/prefix/lib/node_modules/kodex");
         let npm_root = PathBuf::from("/prefix/lib/node_modules");
         assert_eq!(
             compare_npm_package_roots(&running, &npm_root),
             NpmRootCheck::Match {
-                package_root: npm_root.join("@openai").join("codex")
+                package_root: npm_root.join("kodex")
             }
         );
     }
 
     #[test]
     fn compare_npm_package_roots_detects_mismatch() {
-        let running = PathBuf::from("/old/lib/node_modules/@openai/codex");
+        let running = PathBuf::from("/old/lib/node_modules/kodex");
         let npm_root = PathBuf::from("/new/lib/node_modules");
         assert_eq!(
             compare_npm_package_roots(&running, &npm_root),
             NpmRootCheck::Mismatch {
                 running_package_root: running,
-                npm_package_root: npm_root.join("@openai").join("codex"),
+                npm_package_root: npm_root.join("kodex"),
             }
         );
     }

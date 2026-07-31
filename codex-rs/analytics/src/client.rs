@@ -46,6 +46,8 @@ impl AnalyticsEventsClient {
         Self
     }
 
+    pub async fn flush(&self) {}
+
     pub fn track_skill_invocations(
         &self,
         _tracking: TrackEventsContext,

@@ -28,7 +28,7 @@ Remote mode registers the local exec-server with the environment registry,
 then reconnects to the service-provided rendezvous websocket as the environment.
 Remote communication uses the Noise relay contract; the registry and harness
 must support it.
-It uses the standard Codex ChatGPT sign-in state; run `codex login` first when
+It uses the standard Codex ChatGPT sign-in state; run `kodex login` first when
 remote registration needs authentication. Containerized callers that receive an
 Agent Identity JWT in `CODEX_ACCESS_TOKEN` can opt into that auth path with
 `--use-agent-identity-auth`; Codex then registers an Agent task and sends the
@@ -39,7 +39,7 @@ Codex sends it as a bearer token on the registration request. For example:
 
 ```sh
 CODEX_API_KEY="$OPENAI_API_KEY" \
-codex exec-server \
+kodex exec-server \
   --remote ... \
   --environment-id "$ENVIRONMENT_ID"
 ```
@@ -400,11 +400,14 @@ The crate exports:
 - `RemoteEnvironmentConfig` and `run_remote_environment()` for embedding remote
   registration mode
 
-Callers must pass `ExecServerRuntimePaths` to `run_main()`. The top-level
-`kodex exec-server` command builds these paths from the `kodex` arg0 dispatch
-state. `RemoteEnvironmentConfig::new(...)` also takes the auth provider that
-remote registration should use; the CLI builds that provider from Kodex auth
-state before starting remote mode.
+Callers must pass `ExecServerRuntimePaths` and an explicitly configured
+`HttpClientFactory` to `run_main()`. The top-level `kodex exec-server` command
+builds these paths from the `kodex` arg0 dispatch state and resolves its HTTP
+client factory from the effective Kodex configuration.
+`RemoteEnvironmentConfig::new(...)` also takes the auth provider and HTTP client
+factory that remote registration mode should use; the CLI builds the auth
+provider from the effective project-aware Kodex auth state before starting
+remote mode.
 
 ## Example session
 

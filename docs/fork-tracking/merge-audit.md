@@ -136,3 +136,52 @@ The merge recorded conflicts or fork-review decisions in these areas that overla
 ### Outcome
 
 The upstream `rust-v0.145.0` sync was resolved with tracked fork behavior preserved and reverified. The full workspace `just test` suite was not run during this audit; scoped tests covered the crates touched by the merge resolution.
+
+## 2026-07-31 - Upstream Sync `rust-v0.146.0`
+
+- Merge commit: this merge resolution commit.
+- Local pre-merge parent: `84f9334bb790fddc34b250efeb9e67e878c6545c`
+- Upstream tag: `rust-v0.146.0` (`be449751a978f02e5bbba886999662956c7f38f5`)
+- Peeled upstream commit: `e363b08c9175ac1cbe5893615dd2cb9ddf95043b`
+- Merge target: upstream release version `0.146.0`
+
+### Conflict Areas
+
+The merge recorded conflicts or fork-review decisions in these areas:
+
+- CLI rename, installer bootstrap, release workflow, and version/dependency wiring: `README.md`, `.github/workflows/`, `scripts/install/`, `codex-rs/Cargo.toml`, `codex-rs/Cargo.lock`, and `MODULE.bazel.lock`.
+- Telemetry, analytics, announcements, and update disablement: `codex-rs/analytics/`, `codex-rs/otel/`, `codex-rs/http-client/`, `codex-rs/tui/`, `codex-rs/cli/src/doctor/updates.rs`, and `codex-rs/app-server-daemon/`.
+- Project-local auth and route configuration: `codex-rs/core/src/config/`, `codex-rs/login/src/auth/`, `codex-rs/cli/src/login.rs`, `codex-rs/cloud-config/`, and `codex-rs/tui/src/onboarding/auth.rs`.
+- Shared upstream API and runtime changes: app-server config/MCP tests, protocol error handling, unified exec watchers, exec-server transports, and Windows sandbox setup.
+
+### Feature Review
+
+| Feature | Result | Evidence | Follow-up |
+| --- | --- | --- | --- |
+| Kodex CLI rename, telemetry disablement, and update disablement | `active` | Preserved `kodex` packaging and installer behavior, kept analytics/OTEL exporters inert, removed the upstream announcement fetch, disabled the doctor’s remote version probe, and corrected newly exposed `kodex` help/examples. Full CLI and TUI suites, analytics, and release-script checks passed. | None. |
+| Project-local auth files | `active` | Preserved nearest-first project auth loading and project-aware login/logout across core, login, CLI, cloud-config, exec, and TUI route changes. Full CLI/login and app-server auth coverage passed. | None. |
+| Fork release pipeline, installer bootstrap, and release versioning | `active` | Preserved the fork release workflow, `jmilesj/kodex` installer/release URLs, version stamping, musl target graph, and removal of upstream cloud-task/WebRTC release dependencies. Cargo and Bazel lockfiles were regenerated from the merged manifests. | None. |
+
+### Supporting Checks
+
+- `cargo metadata --locked --format-version 1 --no-deps`: passed.
+- `cargo generate-lockfile`: passed with network access; cloud-task packages and WebRTC crates remain absent from the shipped graph.
+- `just bazel-lock-update`: passed with Bazel cache access.
+- `just bazel-lock-check`: passed with Bazel cache access.
+- `bash -n scripts/install/install.sh`: passed.
+- `.github/scripts/test_cli_manifest.py`, `.github/scripts/test_release_workflow.py`, `.github/scripts/test_install_sh.py`, and `.github/scripts/test_kodex_release_version.py`: passed.
+- Python compilation, Node syntax, and release workflow YAML checks: passed.
+- `just test -p codex-cli`: 327 passed, 1 skipped.
+- `just test -p codex-tui --retries 3`: 3,251 passed, 4 skipped (one retry-marked flaky test).
+- `just test -p codex-app-server --retries 3`: 1,003 passed, 17 skipped (one retry-marked flaky test).
+- `just test -p codex-core --retries 2`: 3,074 passed, 22 skipped; four remote/sandbox-dependent tests could not run under this host's enforced sandbox environment.
+- `just test -p codex-protocol`: 265 passed; `codex-app-server-protocol`: 274 passed; `codex-mcp`: 122 passed; `codex-analytics`: 3 passed.
+- Grouped login/config/state/network/identity suites: 914 passed; `codex-http-client`: 67 passed; `codex-app-server-transport --retries 3`: 142 passed (six retry-marked flaky tests); serial `codex-exec-server --test-threads 1`: 359 passed, 3 skipped.
+- `codex-windows-sandbox`, installer scripts, and release scripts passed on the host; Windows-only behavior still requires Windows CI.
+- The shell-network environment test and three remote-environment core tests are documented as sandbox-limited; no `CODEX_SANDBOX_*` code or test behavior was changed.
+- Upstream app-server exporter tests were removed because this fork’s `codex-otel` implementation is intentionally exporter-free; production app-list behavior remains in place.
+- The complete workspace `just test` suite was not run; scoped tests cover the changed crates and a full run requires explicit approval under the repository instructions.
+
+### Outcome
+
+The `rust-v0.146.0` upstream sync is resolved with the three tracked fork features preserved and reverified. No remote push was performed.

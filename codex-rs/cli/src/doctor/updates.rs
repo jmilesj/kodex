@@ -19,18 +19,14 @@ use super::NpmRootCheck;
 use super::doctor_install_context;
 use super::doctor_managed_by_npm;
 use super::npm_global_root_check;
-use super::run_command;
 
 const VERSION_FILE_NAME: &str = "version.json";
-const GITHUB_LATEST_RELEASE_URL: &str =
-    "https://api.github.com/repos/jmilesj/kodex/releases/latest";
-const HOMEBREW_CASK_API_URL: &str = "https://formulae.brew.sh/api/cask/codex.json";
 
 /// Builds the update-health row for the current installation.
 ///
-/// Network failures while fetching latest-version metadata degrade the row to a
-/// warning instead of failing doctor outright; update freshness is useful
-/// support context but should not mask more direct install/config failures.
+/// Remote update checks are intentionally disabled in this fork. The check
+/// still reports local configuration, cached metadata, and package-manager
+/// installation details for troubleshooting.
 pub(super) fn updates_check(config: &Config) -> DoctorCheck {
     let current_exe = std::env::current_exe().ok();
     let install_context = doctor_install_context(current_exe.as_deref());
@@ -74,7 +70,7 @@ pub(super) fn updates_check(config: &Config) -> DoctorCheck {
                 status = status.max(CheckStatus::Warning);
                 summary = "npm update target could not be proven".to_string();
                 remediation = Some(
-                    "Reinstall or update Codex so the JS shim provides CODEX_MANAGED_PACKAGE_ROOT."
+                    "Reinstall or update Kodex so the JS shim provides CODEX_MANAGED_PACKAGE_ROOT."
                         .to_string(),
                 );
             }
@@ -86,20 +82,7 @@ pub(super) fn updates_check(config: &Config) -> DoctorCheck {
         }
     }
 
-    match fetch_latest_version(&install_context) {
-        Ok(latest_version) => {
-            details.push(format!("latest version: {latest_version}"));
-            if is_newer(&latest_version, env!("CARGO_PKG_VERSION")) == Some(true) {
-                details.push("latest version status: newer version is available".to_string());
-            } else {
-                details.push("latest version status: current version is not older".to_string());
-            }
-        }
-        Err(err) => {
-            status = status.max(CheckStatus::Warning);
-            details.push(format!("latest version probe: {err}"));
-        }
-    }
+    details.push("latest version probe: disabled in this fork".to_string());
 
     let mut check = DoctorCheck::new("updates.status", "updates", status, summary).details(details);
     if let Some(remediation) = remediation {
@@ -132,99 +115,13 @@ fn push_cached_version_details(details: &mut Vec<String>, version_file: &Path) {
 
 fn update_action_label(context: &InstallContext) -> &'static str {
     match &context.method {
-        InstallMethod::Npm => "npm install -g @openai/codex",
-        InstallMethod::Bun => "bun install -g @openai/codex",
-        InstallMethod::Pnpm => "pnpm add -g @openai/codex",
-        InstallMethod::Brew => "brew upgrade --cask codex",
+        InstallMethod::Npm => "npm install -g kodex",
+        InstallMethod::Bun => "bun install -g kodex",
+        InstallMethod::Pnpm => "pnpm add -g kodex",
+        InstallMethod::Brew => "brew upgrade --cask kodex",
         InstallMethod::Standalone { .. } => "standalone installer",
         InstallMethod::Other => "manual or unknown",
     }
-}
-
-fn fetch_latest_version(context: &InstallContext) -> Result<String, String> {
-    match &context.method {
-        InstallMethod::Brew => fetch_homebrew_cask_version(),
-        InstallMethod::Npm
-        | InstallMethod::Bun
-        | InstallMethod::Pnpm
-        | InstallMethod::Standalone { .. }
-        | InstallMethod::Other => fetch_latest_github_release_version(),
-    }
-}
-
-fn fetch_latest_github_release_version() -> Result<String, String> {
-    #[derive(Deserialize)]
-    struct ReleaseInfo {
-        tag_name: String,
-    }
-
-    let info = http_get_json::<ReleaseInfo>(GITHUB_LATEST_RELEASE_URL)?;
-    let mut version = info.tag_name.as_str();
-    let mut stripped_any_prefix = false;
-
-    loop {
-        if let Some(rest) = version.strip_prefix("kodex-v") {
-            version = rest;
-            stripped_any_prefix = true;
-            continue;
-        }
-        if let Some(rest) = version.strip_prefix("rust-v") {
-            version = rest;
-            stripped_any_prefix = true;
-            continue;
-        }
-        if let Some(rest) = version.strip_prefix('v') {
-            version = rest;
-            stripped_any_prefix = true;
-            continue;
-        }
-        break;
-    }
-
-    if stripped_any_prefix {
-        Ok(version
-            .split_once('+')
-            .map_or(version, |(base, _)| base)
-            .to_string())
-    } else {
-        Err(format!("failed to parse latest tag {}", info.tag_name))
-    }
-}
-
-fn fetch_homebrew_cask_version() -> Result<String, String> {
-    #[derive(Deserialize)]
-    struct HomebrewCaskInfo {
-        version: String,
-    }
-
-    http_get_json::<HomebrewCaskInfo>(HOMEBREW_CASK_API_URL).map(|info| info.version)
-}
-
-fn http_get_json<T>(url: &str) -> Result<T, String>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    let body = run_command("curl", ["-fsSL", "--max-time", "5", url])?;
-    serde_json::from_str::<T>(&body).map_err(|err| err.to_string())
-}
-
-fn is_newer(latest: &str, current: &str) -> Option<bool> {
-    match (parse_version(latest), parse_version(current)) {
-        (Some(latest), Some(current)) => Some(latest > current),
-        (Some(_), None) | (None, Some(_)) | (None, None) => None,
-    }
-}
-
-fn parse_version(value: &str) -> Option<(u64, u64, u64)> {
-    let base_version = value
-        .trim()
-        .split_once('+')
-        .map_or(value.trim(), |(base, _)| base);
-    let mut parts = base_version.split('.');
-    let major = parts.next()?.parse::<u64>().ok()?;
-    let minor = parts.next()?.parse::<u64>().ok()?;
-    let patch = parts.next()?.parse::<u64>().ok()?;
-    Some((major, minor, patch))
 }
 
 #[derive(Deserialize)]
@@ -241,27 +138,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn is_newer_compares_plain_semver() {
-        assert_eq!(is_newer("1.2.4", "1.2.3"), Some(true));
-        assert_eq!(is_newer("1.2.3", "1.2.4"), Some(false));
-        assert_eq!(is_newer("1.2.3-beta.1", "1.2.2"), None);
-    }
-
-    #[test]
     fn update_action_labels_install_contexts() {
         assert_eq!(
             update_action_label(&InstallContext {
                 method: InstallMethod::Npm,
                 package_layout: None,
             }),
-            "npm install -g @openai/codex"
+            "npm install -g kodex"
         );
         assert_eq!(
             update_action_label(&InstallContext {
                 method: InstallMethod::Pnpm,
                 package_layout: None,
             }),
-            "pnpm add -g @openai/codex"
+            "pnpm add -g kodex"
         );
         assert_eq!(
             update_action_label(&InstallContext {

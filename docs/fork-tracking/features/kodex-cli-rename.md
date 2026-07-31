@@ -33,7 +33,6 @@ Primary upstream areas to inspect after merges:
 - `codex-cli/scripts/build_npm_package.py`
 - `codex-cli/scripts/install_native_deps.py`
 - `scripts/install/install.sh`
-- `scripts/install/install.ps1`
 - `scripts/stage_npm_packages.py`
 - `codex-rs/analytics/src/client.rs`
 - `codex-rs/core/src/otel_init.rs`
@@ -67,7 +66,7 @@ Manual checks:
 - CLI help and examples use `kodex` for the user-facing command.
 - npm package `bin` exposes `kodex`, not `codex`.
 - package staging expects a `kodex` native executable.
-- `scripts/install/install.ps1` syntax and rename references still target `kodex`.
+- The Windows installer remains intentionally absent because this fork publishes no Windows release asset.
 - update commands, background update checks, and app-server updater loops do not contact upstream update services.
 - analytics and OTEL initialization stay disabled.
 
@@ -84,7 +83,7 @@ Manual checks:
 
 ## Last Verified
 
-Upstream tag `rust-v0.145.0`, peeled commit `25af12f7e6`.
+Upstream tag `rust-v0.146.0`, peeled commit `e363b08c91`.
 
 ## Retirement Condition
 

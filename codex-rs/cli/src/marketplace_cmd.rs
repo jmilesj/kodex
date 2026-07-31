@@ -83,7 +83,7 @@ struct AddMarketplaceArgs {
 }
 
 #[derive(Debug, Parser)]
-#[command(bin_name = "codex plugin marketplace list")]
+#[command(bin_name = "kodex plugin marketplace list")]
 struct ListMarketplaceArgs {
     /// Output marketplace list as JSON.
     #[arg(long = "json")]

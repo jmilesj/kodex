@@ -5,6 +5,7 @@ use codex_config::CloudConfigBundleLoadError;
 use codex_config::CloudConfigBundleLoadErrorCode;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::types::AuthCredentialsStoreMode;
+use codex_http_client::HttpClientFactory;
 use codex_login::AuthKeyringBackendKind;
 use codex_login::AuthManager;
 use codex_login::AuthRouteConfig;
@@ -23,10 +24,14 @@ pub fn cloud_config_bundle_loader(
     auth_manager: Arc<AuthManager>,
     chatgpt_base_url: String,
     codex_home: PathBuf,
+    http_client_factory: HttpClientFactory,
 ) -> CloudConfigBundleLoader {
     let service = CloudConfigBundleService::new(
         auth_manager,
-        Arc::new(BackendBundleClient::new(chatgpt_base_url)),
+        Arc::new(BackendBundleClient::new(
+            chatgpt_base_url,
+            http_client_factory,
+        )),
         codex_home,
         CLOUD_CONFIG_BUNDLE_TIMEOUT,
     );
@@ -60,8 +65,9 @@ pub async fn cloud_config_bundle_loader_for_storage(
     credentials_store_mode: AuthCredentialsStoreMode,
     keyring_backend_kind: AuthKeyringBackendKind,
     chatgpt_base_url: String,
-    auth_route_config: Option<AuthRouteConfig>,
+    auth_route_config: AuthRouteConfig,
 ) -> CloudConfigBundleLoader {
+    let http_client_factory = auth_route_config.http_client_factory().clone();
     let auth_manager = AuthManager::shared_with_project_auth_dirs(
         codex_home.clone(),
         project_auth_dirs,
@@ -73,5 +79,10 @@ pub async fn cloud_config_bundle_loader_for_storage(
         auth_route_config,
     )
     .await;
-    cloud_config_bundle_loader(auth_manager, chatgpt_base_url, codex_home)
+    cloud_config_bundle_loader(
+        auth_manager,
+        chatgpt_base_url,
+        codex_home,
+        http_client_factory,
+    )
 }

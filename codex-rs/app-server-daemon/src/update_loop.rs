@@ -1,6 +1,7 @@
 use anyhow::Result;
 #[cfg(not(unix))]
 use anyhow::bail;
+use codex_http_client::HttpClientFactory;
 
 #[cfg(unix)]
 use crate::RestartMode;
@@ -10,12 +11,12 @@ use crate::UpdaterRefreshMode;
 use crate::managed_install::ExecutableIdentity;
 
 #[cfg(unix)]
-pub(crate) async fn run() -> Result<()> {
+pub(crate) async fn run(_http_client_factory: HttpClientFactory) -> Result<()> {
     Ok(())
 }
 
 #[cfg(not(unix))]
-pub(crate) async fn run() -> Result<()> {
+pub(crate) async fn run(_http_client_factory: HttpClientFactory) -> Result<()> {
     bail!("pid-managed updater loop is unsupported on this platform")
 }
 

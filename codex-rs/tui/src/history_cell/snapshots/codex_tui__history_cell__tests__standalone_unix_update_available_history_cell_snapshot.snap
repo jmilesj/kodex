@@ -3,7 +3,7 @@ source: tui/src/history_cell/tests.rs
 expression: rendered
 ---
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ✨ Update available! 0.145.0 -> 9.9.9                                                                      │
+│ ✨ Update available! 0.146.0 -> 9.9.9                                                                      │
 │ Run sh -c 'curl -fsSL https://github.com/jmilesj/kodex/releases/latest/download/install.sh | sh' to        │
 │ update.                                                                                                    │
 │                                                                                                            │

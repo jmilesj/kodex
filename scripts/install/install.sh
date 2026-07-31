@@ -68,8 +68,8 @@ validate_version() {
     return
   fi
 
-  if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?(-(alpha|beta)(\.[0-9]+)?)?$'; then
-    echo "Invalid Kodex release version: $version. Expected latest or x.y.z[.build][-alpha[.N]|-beta[.N]]." >&2
+  if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?(-alpha(\.[0-9]+){0,2}|-beta(\.[0-9]+)?)?$'; then
+    echo "Invalid Kodex release version: $version. Expected latest or x.y.z[.build][-alpha[.N[.M]]|-beta[.N]]." >&2
     exit 1
   fi
 }
@@ -194,7 +194,11 @@ release_asset_digest_or_empty() {
 
   case "$digest" in
     sha256:????????????????????????????????????????????????????????????????)
-      printf '%s\n' "${digest#sha256:}"
+      digest="${digest#sha256:}"
+      case "$digest" in
+        *[!0-9a-fA-F]*) return 1 ;;
+      esac
+      printf '%s\n' "$digest"
       ;;
     *)
       return 1
