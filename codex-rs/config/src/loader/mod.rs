@@ -59,8 +59,8 @@ const DEFAULT_PROGRAM_DATA_DIR_WINDOWS: &str = r"C:\ProgramData";
 
 // Project-local config comes from repository contents, so it should not get to
 // choose where a user's credentials are sent or which local commands are run.
-// These settings are still supported from user, system, managed, and runtime
-// config layers.
+// Model provider settings are the exception when the same `.codex` directory
+// contains explicit project-local credentials.
 const PROJECT_LOCAL_CONFIG_DENYLIST: &[&str] = &[
     "openai_base_url",
     "chatgpt_base_url",
@@ -74,6 +74,8 @@ const PROJECT_LOCAL_CONFIG_DENYLIST: &[&str] = &[
     "experimental_realtime_ws_base_url",
     "otel",
 ];
+const PROJECT_LOCAL_AUTH_FILE: &str = "auth.json";
+const PROJECT_LOCAL_PROVIDER_CONFIG_KEYS: &[&str] = &["model_provider", "model_providers"];
 
 async fn first_layer_config_error_from_entries(layers: &[ConfigLayerEntry]) -> Option<ConfigError> {
     typed_first_layer_config_error_from_entries::<ConfigToml>(layers, CONFIG_TOML_FILE).await
@@ -953,13 +955,16 @@ fn project_layer_entry(
     entry.with_hooks_config_folder_override(hooks_config_folder_override)
 }
 
-fn sanitize_project_config(config: &mut TomlValue) -> Vec<String> {
+fn sanitize_project_config(config: &mut TomlValue, has_project_auth: bool) -> Vec<String> {
     let Some(table) = config.as_table_mut() else {
         return Vec::new();
     };
 
     let mut ignored_keys = Vec::new();
     for key in PROJECT_LOCAL_CONFIG_DENYLIST {
+        if has_project_auth && PROJECT_LOCAL_PROVIDER_CONFIG_KEYS.contains(key) {
+            continue;
+        }
         if table.remove(*key).is_some() {
             ignored_keys.push((*key).to_string());
         }
@@ -1293,7 +1298,14 @@ async fn load_project_layers(
                         dot_codex_abs.as_path(),
                     )?;
                 }
-                let ignored_project_config_keys = sanitize_project_config(&mut config);
+                let auth_file = dot_codex_abs.join(PROJECT_LOCAL_AUTH_FILE);
+                let auth_file_uri = PathUri::from_abs_path(&auth_file);
+                let has_project_auth = fs
+                    .get_metadata(&auth_file_uri, /*sandbox*/ None)
+                    .await
+                    .is_ok_and(|metadata| metadata.is_file);
+                let ignored_project_config_keys =
+                    sanitize_project_config(&mut config, has_project_auth);
                 let config =
                     resolve_relative_paths_in_config_toml(config, dot_codex_abs.as_path())?;
                 let config = merge_root_checkout_project_hooks(

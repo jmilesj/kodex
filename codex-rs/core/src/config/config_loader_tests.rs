@@ -33,6 +33,7 @@ use codex_config::loader::load_requirements_toml;
 use codex_config::test_support::CloudConfigBundleFixture;
 use codex_exec_server::LOCAL_FS;
 use codex_features::Feature;
+use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::config_types::EnvironmentVariablePattern;
 use codex_protocol::config_types::TrustLevel;
 use codex_protocol::config_types::WebSearchMode;
@@ -3425,6 +3426,62 @@ wire_api = "responses"
         );
     }
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn project_layer_loads_model_provider_with_project_auth() -> std::io::Result<()> {
+    let tmp = tempdir()?;
+    let project_root = tmp.path().join("project");
+    let dot_codex = project_root.join(".codex");
+    tokio::fs::create_dir_all(&dot_codex).await?;
+    tokio::fs::write(
+        dot_codex.join(CONFIG_TOML_FILE),
+        r#"
+model_provider = "project-provider"
+
+[model_providers.project-provider]
+name = "Project Provider"
+base_url = "https://project-provider.example/v1"
+wire_api = "responses"
+requires_openai_auth = true
+"#,
+    )
+    .await?;
+    tokio::fs::write(
+        dot_codex.join("auth.json"),
+        r#"{"OPENAI_API_KEY":"project-key"}"#,
+    )
+    .await?;
+
+    let codex_home = tmp.path().join("home");
+    tokio::fs::create_dir_all(&codex_home).await?;
+    make_config_for_test(
+        &codex_home,
+        &project_root,
+        TrustLevel::Trusted,
+        /*project_root_markers*/ None,
+    )
+    .await?;
+
+    let config = ConfigBuilder::default()
+        .codex_home(codex_home)
+        .fallback_cwd(Some(project_root))
+        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+        .build()
+        .await?;
+
+    assert_eq!(config.model_provider_id, "project-provider");
+    assert_eq!(
+        config.model_provider,
+        ModelProviderInfo {
+            name: "Project Provider".to_string(),
+            base_url: Some("https://project-provider.example/v1".to_string()),
+            requires_openai_auth: true,
+            ..Default::default()
+        }
+    );
+    assert_eq!(config.project_auth_dirs(), vec![dot_codex]);
     Ok(())
 }
 

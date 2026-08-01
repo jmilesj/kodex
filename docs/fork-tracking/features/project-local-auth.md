@@ -1,8 +1,10 @@
-# Project-Local Auth Files
+# Project-Local Auth and Provider Config
 
 ## Purpose
 
 This fork supports project-local `.codex/auth.json` files that take precedence over the configured global persistent auth store. That lets a project carry explicit local credentials without replacing the user's global Codex auth.
+
+Trusted project layers may also define `model_provider` and `model_providers` in the same `.codex/config.toml` when that directory contains `auth.json`. Provider routing remains ignored for project config without colocated credentials, which prevents a project from redirecting the global auth fallback. Other project-local configuration follows the upstream trust and denylist rules.
 
 The feature threads project auth directories through config loading, login status, logout behavior, TUI startup, exec startup, cloud requirements, and auth manager refresh behavior.
 
@@ -13,6 +15,7 @@ Upstream owns the global auth store, config layer stack, login/logout commands, 
 Primary upstream areas to inspect after merges:
 
 - `codex-rs/core/src/config/`
+- `codex-rs/config/src/loader/`
 - `codex-rs/login/src/auth/`
 - `codex-rs/cli/src/login.rs`
 - `codex-rs/exec/src/lib.rs`
@@ -58,6 +61,7 @@ Targeted tests to look for in the output:
 
 - `project_auth_dirs_include_project_codex_dirs_nearest_first`
 - `config_toml_load_returns_project_auth_dirs`
+- `project_layer_loads_model_provider_with_project_auth`
 - `load_persistent_auth_prefers_first_project_auth_file`
 - `load_persistent_auth_falls_back_to_global_when_project_auth_is_missing`
 - `project_chatgpt_auth_refresh_persists_to_project_auth_json`
@@ -68,6 +72,8 @@ Manual checks:
 
 - Project auth directories are derived from project config layers nearest-first.
 - Project-local auth takes precedence over global auth when present.
+- Trusted project provider settings load when the matching project `.codex/auth.json` exists.
+- Project provider settings remain ignored when project-local auth is absent.
 - Missing project auth falls back to the configured global store.
 - Logout removes the active project auth file without deleting unrelated global auth.
 - TUI and exec startup pass the same project auth directories into auth loading.
